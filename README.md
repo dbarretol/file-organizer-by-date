@@ -22,6 +22,10 @@ Before:                          After:
 
 - 🦀 **Written in Rust** — fast, safe, and reliable.
 - 🌍 **Cross-platform** — works on Windows, Linux, and macOS.
+- 💬 **Interactive mode** — prompts for the directory path and confirms before
+  moving files.
+- 🔍 **Dry-run preview** — shows exactly what will happen before any file is
+  moved.
 - 🔁 **Recursive scanning** — processes files in all subdirectories.
 - 📁 **Auto-creates folders** — generates `YXXXX-MXX` directories automatically.
 - 🛡️ **Name conflict resolution** — appends numeric suffixes (`_1`, `_2`...) to
@@ -32,6 +36,7 @@ Before:                          After:
   fails across different drives.
 - 📊 **Summary report** — displays a final count of moved, skipped, and failed
   files.
+- 🔄 **Loop mode** — organize multiple folders in one session.
 
 ---
 
@@ -55,46 +60,54 @@ cargo build --release
 The compiled binary will be located at:
 
 ```
-target/release/file-organizer      # Linux / macOS
-target/release/file-organizer.exe  # Windows
+target/release/file-organizer-by-date      # Linux / macOS
+target/release/file-organizer-by-date.exe  # Windows
 ```
 
 ---
 
 ## 📖 Usage
 
-### Organize the current directory
-
 ```bash
 cargo run
 # or
-./target/release/file-organizer
+./target/release/file-organizer-by-date
 ```
 
-### Organize a specific directory
-
-```bash
-cargo run -- /path/to/directory
-# or
-./target/release/file-organizer /path/to/directory
-```
-
-### Example output
+### Interactive flow
 
 ```text
-📂 Organizando archivos en: /home/user/Downloads
+╔══════════════════════════════════════════════╗
+║       📂 File Organizer by Date v0.2.0      ║
+║  Organiza archivos por fecha de modificación ║
+╚══════════════════════════════════════════════╝
+
+📁 Ingrese la ruta de la carpeta a organizar (o 'q' para salir): C:\Users\me\Downloads
+
+🔍 Vista previa (dry-run):
+─────────────────────────────────────────────
+   report.pdf → Y2024-M07/
+   image.png → Y2024-M07/
+   notes.txt → Y2025-M12/
+─────────────────────────────────────────────
+📊 Se moverán 3 archivo(s) en total.
+
+¿Está seguro de que desea continuar? (s/n): s
+
 📁 Carpeta creada: Y2024-M07
-✔ /home/user/Downloads/report.pdf → /home/user/Downloads/Y2024-M07/report.pdf
-✔ /home/user/Downloads/image.png → /home/user/Downloads/Y2024-M07/image.png
+✔ C:\Users\me\Downloads\report.pdf → C:\Users\me\Downloads\Y2024-M07\report.pdf
+✔ C:\Users\me\Downloads\image.png → C:\Users\me\Downloads\Y2024-M07\image.png
 📁 Carpeta creada: Y2025-M12
-✔ /home/user/Downloads/notes.txt → /home/user/Downloads/Y2025-M12/notes.txt
-⚠️  Conflicto de nombre, renombrando a: notes_1.txt
-✔ /home/user/Downloads/sub/notes.txt → /home/user/Downloads/Y2025-M12/notes_1.txt
+✔ C:\Users\me\Downloads\notes.txt → C:\Users\me\Downloads\Y2025-M12\notes.txt
 
 ✅ Resultado:
-   Archivos movidos:  4
+   Archivos movidos:  3
    Archivos omitidos: 0
    Errores:           0
+
+─────────────────────────────────────────────
+¿Desea organizar otra carpeta? (s/n, o presione 'q' para salir): q
+👋 ¡Hasta luego!
 ```
 
 ---
@@ -129,8 +142,8 @@ file-organizer-by-date/
 
 ## ⚙️ Dependencies
 
-| Crate                                    | Purpose                          |
-|------------------------------------------|----------------------------------|
+| Crate                                     | Purpose                          |
+|-------------------------------------------|----------------------------------|
 | [chrono](https://crates.io/crates/chrono) | Date/time formatting and parsing |
 
 ---
@@ -145,6 +158,7 @@ file-organizer-by-date/
   created.
 - If a file with the same name already exists in the destination folder, a
   numeric suffix is added (up to `_10000`).
+- The dry-run preview lets you review changes before committing.
 
 ---
 
@@ -168,7 +182,9 @@ This project is licensed under the [MIT License](LICENSE).
 
 ## 🗺️ Roadmap
 
-- [ ] Add `--dry-run` flag to preview changes without moving files
+- [x] ~~Add `--dry-run` preview before moving files~~
+- [x] ~~Interactive mode with confirmation prompt~~
+- [x] ~~Loop mode to organize multiple folders~~
 - [ ] Add `--by-day` flag to organize by day (`Y2024-M01-D15`)
 - [ ] Add `--undo` flag to reverse the last organization
 - [ ] Add `--extensions` flag to filter by file type
@@ -180,15 +196,3 @@ This project is licensed under the [MIT License](LICENSE).
 <p align="center">
   Made with 🦀 and ❤️
 </p>
-```
-
----
-
-Simplemente crea el archivo `README.md` en la raíz de tu proyecto junto a `Cargo.toml`:
-
-```text
-file-organizer-by-date/
-├── Cargo.toml
-├── README.md        ← aquí
-└── src/
-    └── main.rs
