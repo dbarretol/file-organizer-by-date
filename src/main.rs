@@ -292,7 +292,17 @@ fn copy_then_remove(source: &Path, dest: &Path, rename_err: io::Error) -> Result
         }
     };
 
-    let copy_result = fs::File::open(source).and_then(|mut src| io::copy(&mut src, &mut dest_file));
+    let copy_result = (|| {
+        let mut src = fs::File::open(source)?;
+        let metadata = src.metadata()?;
+        io::copy(&mut src, &mut dest_file)?;
+        // Preservar lo que fs::rename habría mantenido: sin esto, el archivo
+        // copiado quedaría con mtime = ahora, corrompiendo justo el dato por
+        // el que esta herramienta organiza.
+        dest_file.set_modified(metadata.modified()?)?;
+        dest_file.set_permissions(metadata.permissions())?;
+        Ok::<(), io::Error>(())
+    })();
     drop(dest_file);
 
     match copy_result {
@@ -480,6 +490,32 @@ mod tests {
         ));
         assert_eq!(fs::read_to_string(&dest).unwrap(), "original intacto");
         assert_eq!(fs::read_to_string(&source).unwrap(), "nuevo");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn copy_fallback_preserves_source_mtime() {
+        let dir = temp_dir("mtime");
+        let source = dir.join("a.txt");
+        let dest = dir.join("b.txt");
+        fs::write(&source, "contenido").unwrap();
+
+        // mtime antiguo bien distinto de "ahora" (2001-09-09)
+        let old_mtime = std::time::SystemTime::UNIX_EPOCH
+            + std::time::Duration::from_secs(1_000_000_000);
+        fs::File::options()
+            .write(true)
+            .open(&source)
+            .unwrap()
+            .set_modified(old_mtime)
+            .unwrap();
+
+        let rename_err = io::Error::other("simulado");
+        assert!(copy_then_remove(&source, &dest, rename_err).is_ok());
+        assert!(!source.exists());
+        assert_eq!(fs::read_to_string(&dest).unwrap(), "contenido");
+        assert_eq!(fs::metadata(&dest).unwrap().modified().unwrap(), old_mtime);
 
         let _ = fs::remove_dir_all(&dir);
     }
