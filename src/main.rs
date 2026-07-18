@@ -115,7 +115,7 @@ fn execute_moves(base_dir: &Path, entries: &[FileEntry]) -> (u32, u32) {
     let mut moved = 0u32;
     let mut errors = 0u32;
 
-    for entry in entries {
+    'files: for entry in entries {
         let dest_dir = base_dir.join(&entry.folder_name);
 
         if !dest_dir.is_dir() {
@@ -155,6 +155,9 @@ fn execute_moves(base_dir: &Path, entries: &[FileEntry]) -> (u32, u32) {
 
         let mut dest_path = dest_dir.join(file_name);
 
+        // La comprobación con exists() es solo orientativa: move_file nunca
+        // sobrescribe, así que si otro proceso crea el destino justo después
+        // de comprobar (TOCTOU), se resuelve otro nombre y se reintenta.
         if dest_path.exists() {
             match resolve_conflict(&dest_dir, file_name) {
                 Ok(resolved) => {
@@ -173,28 +176,61 @@ fn execute_moves(base_dir: &Path, entries: &[FileEntry]) -> (u32, u32) {
             }
         }
 
-        match move_file(&entry.source, &dest_path) {
-            Ok(()) => {
-                println!("✔ {} → {}", entry.source.display(), dest_path.display());
-                moved += 1;
-            }
-            Err(MoveError::CopiedButOriginalRemains(e)) => {
-                eprintln!(
-                    "⚠️  '{}' se copió a '{}' pero no se pudo borrar el original (queda duplicado): {}",
-                    entry.source.display(),
-                    dest_path.display(),
-                    e
-                );
-                errors += 1;
-            }
-            Err(MoveError::Failed { rename, copy }) => {
-                eprintln!(
-                    "✘ Error moviendo '{}': {} (rename falló con: {})",
-                    entry.source.display(),
-                    copy,
-                    rename
-                );
-                errors += 1;
+        let mut attempts = 0;
+        loop {
+            match move_file(&entry.source, &dest_path) {
+                Ok(()) => {
+                    println!("✔ {} → {}", entry.source.display(), dest_path.display());
+                    moved += 1;
+                    continue 'files;
+                }
+                Err(MoveError::DestinationExists) => {
+                    attempts += 1;
+                    if attempts > 5 {
+                        eprintln!(
+                            "✘ No se pudo mover '{}': el destino sigue ocupado tras {} intentos",
+                            entry.source.display(),
+                            attempts
+                        );
+                        errors += 1;
+                        continue 'files;
+                    }
+                    match resolve_conflict(&dest_dir, file_name) {
+                        Ok(resolved) => {
+                            println!(
+                                "⚠️  Conflicto: '{}' apareció en el destino → reintentando como '{}'",
+                                dest_path.file_name().unwrap_or_default().to_string_lossy(),
+                                resolved.file_name().unwrap().to_string_lossy()
+                            );
+                            dest_path = resolved;
+                        }
+                        Err(e) => {
+                            eprintln!("✘ Error resolviendo conflicto: {}", e);
+                            errors += 1;
+                            continue 'files;
+                        }
+                    }
+                }
+                Err(MoveError::CopiedButOriginalRemains(e)) => {
+                    eprintln!(
+                        "⚠️  '{}' se copió a '{}' pero no se pudo borrar el original (queda duplicado): {}",
+                        entry.source.display(),
+                        dest_path.display(),
+                        e
+                    );
+                    errors += 1;
+                    continue 'files;
+                }
+                Err(MoveError::Failed { rename, copy }) => {
+                    eprintln!(
+                        "✘ Error moviendo '{}': {} (rename falló con: {})",
+                        entry.source.display(),
+                        copy,
+                        rename
+                    );
+                    errors += 1;
+                    continue 'files;
+                }
             }
         }
     }
@@ -203,6 +239,9 @@ fn execute_moves(base_dir: &Path, entries: &[FileEntry]) -> (u32, u32) {
 }
 
 enum MoveError {
+    /// El destino ya existe: move_file nunca sobrescribe. El llamador debe
+    /// resolver otro nombre y reintentar.
+    DestinationExists,
     /// La copia al destino se completó, pero no se pudo borrar el original:
     /// el archivo queda duplicado (origen y destino).
     CopiedButOriginalRemains(io::Error),
@@ -211,19 +250,62 @@ enum MoveError {
 }
 
 fn move_file(source: &Path, dest: &Path) -> Result<(), MoveError> {
+    // fs::rename sobrescribe el destino en silencio en TODAS las plataformas
+    // (en Windows usa MoveFileExW con MOVEFILE_REPLACE_EXISTING), así que
+    // primero se reclama el nombre de forma atómica con create_new; rename
+    // después solo sustituye ese placeholder, que ya es nuestro. Si el
+    // placeholder falla por otra razón (p. ej. permisos), rename/copy
+    // fallarán igual y reportarán el error real.
+    match fs::OpenOptions::new().write(true).create_new(true).open(dest) {
+        Ok(_) => {}
+        Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {
+            return Err(MoveError::DestinationExists)
+        }
+        Err(_) => {}
+    }
+
     let rename_err = match fs::rename(source, dest) {
         Ok(()) => return Ok(()),
         Err(e) => e,
     };
 
-    if let Err(copy_err) = fs::copy(source, dest) {
-        return Err(MoveError::Failed {
-            rename: rename_err,
-            copy: copy_err,
-        });
-    }
+    // El placeholder sigue en dest (rename no ocurrió) y es nuestro:
+    // copy_then_remove lo rellena o lo retira si la copia falla.
+    let _ = fs::remove_file(dest);
+    copy_then_remove(source, dest, rename_err)
+}
 
-    fs::remove_file(source).map_err(MoveError::CopiedButOriginalRemains)
+/// Fallback cuando rename no es posible (p. ej. destino en otro volumen).
+/// Abre el destino con create_new para no sobrescribir jamás un archivo
+/// creado por otro proceso entre la comprobación de conflictos y este punto.
+fn copy_then_remove(source: &Path, dest: &Path, rename_err: io::Error) -> Result<(), MoveError> {
+    let mut dest_file = match fs::OpenOptions::new().write(true).create_new(true).open(dest) {
+        Ok(file) => file,
+        Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {
+            return Err(MoveError::DestinationExists)
+        }
+        Err(copy_err) => {
+            return Err(MoveError::Failed {
+                rename: rename_err,
+                copy: copy_err,
+            })
+        }
+    };
+
+    let copy_result = fs::File::open(source).and_then(|mut src| io::copy(&mut src, &mut dest_file));
+    drop(dest_file);
+
+    match copy_result {
+        Ok(_) => fs::remove_file(source).map_err(MoveError::CopiedButOriginalRemains),
+        Err(copy_err) => {
+            // No dejar un destino a medio copiar
+            let _ = fs::remove_file(dest);
+            Err(MoveError::Failed {
+                rename: rename_err,
+                copy: copy_err,
+            })
+        }
+    }
 }
 
 // ─────────────────────── UI HELPERS ─────────────────────────
@@ -355,4 +437,68 @@ fn is_self_executable(path: &Path) -> bool {
         }
     }
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn temp_dir(name: &str) -> PathBuf {
+        let dir = env::temp_dir().join(format!("fo_move_test_{name}"));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn move_file_moves_when_dest_is_free() {
+        let dir = temp_dir("free");
+        let source = dir.join("a.txt");
+        let dest = dir.join("b.txt");
+        fs::write(&source, "contenido").unwrap();
+
+        assert!(move_file(&source, &dest).is_ok());
+        assert!(!source.exists());
+        assert_eq!(fs::read_to_string(&dest).unwrap(), "contenido");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn move_file_never_overwrites_existing_dest() {
+        let dir = temp_dir("occupied");
+        let source = dir.join("a.txt");
+        let dest = dir.join("b.txt");
+        fs::write(&source, "nuevo").unwrap();
+        fs::write(&dest, "original intacto").unwrap();
+
+        // Simula el TOCTOU: el destino apareció después de la comprobación
+        // de conflictos. move_file debe negarse a sobrescribir.
+        assert!(matches!(
+            move_file(&source, &dest),
+            Err(MoveError::DestinationExists)
+        ));
+        assert_eq!(fs::read_to_string(&dest).unwrap(), "original intacto");
+        assert_eq!(fs::read_to_string(&source).unwrap(), "nuevo");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn copy_fallback_never_overwrites_existing_dest() {
+        let dir = temp_dir("fallback");
+        let source = dir.join("a.txt");
+        let dest = dir.join("b.txt");
+        fs::write(&source, "nuevo").unwrap();
+        fs::write(&dest, "original intacto").unwrap();
+
+        let rename_err = io::Error::new(io::ErrorKind::Other, "simulado");
+        assert!(matches!(
+            copy_then_remove(&source, &dest, rename_err),
+            Err(MoveError::DestinationExists)
+        ));
+        assert_eq!(fs::read_to_string(&dest).unwrap(), "original intacto");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
 }
