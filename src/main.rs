@@ -18,15 +18,35 @@ fn main() {
 
     // Modo scriptable: la ruta puede pasarse como argumento
     // (p. ej. `file-organizer-by-date C:\Descargas`); se procesa una sola
-    // carpeta y se termina, sin el bucle interactivo.
-    if let Some(arg) = env::args_os().nth(1) {
-        let path = PathBuf::from(arg);
+    // carpeta y se termina, sin el bucle interactivo. Con --yes / -y no se
+    // pide confirmación (necesario en scripts sin stdin); sin el flag se
+    // conserva el prompt como red de seguridad.
+    let mut auto_confirm = false;
+    let mut path_arg: Option<PathBuf> = None;
+    for arg in env::args_os().skip(1) {
+        if arg == "--yes" || arg == "-y" {
+            auto_confirm = true;
+        } else if path_arg.is_none() {
+            path_arg = Some(PathBuf::from(arg));
+        } else {
+            eprintln!("✘ Uso: file-organizer-by-date [RUTA] [--yes|-y]");
+            std::process::exit(2);
+        }
+    }
+
+    if let Some(path) = path_arg {
         if !path.is_dir() {
             eprintln!("✘ '{}' no existe o no es un directorio.", path.display());
             std::process::exit(1);
         }
-        organize_directory(&path);
-        return;
+        // Código de salida útil para scripts: 0 solo si no hubo errores
+        // ni cancelación.
+        let ok = organize_directory(&path, auto_confirm);
+        std::process::exit(if ok { 0 } else { 1 });
+    }
+    if auto_confirm {
+        eprintln!("✘ --yes requiere pasar también una ruta. Uso: file-organizer-by-date RUTA --yes");
+        std::process::exit(2);
     }
 
     loop {
@@ -38,7 +58,7 @@ fn main() {
             }
         };
 
-        organize_directory(&target_dir);
+        organize_directory(&target_dir, false);
 
         println!("\n─────────────────────────────────────────────");
         if !confirm("¿Desea organizar otra carpeta? (s/n, o presione 'q' para salir): ") {
@@ -50,13 +70,16 @@ fn main() {
 }
 
 /// Flujo completo sobre una carpeta: escanear, previsualizar, confirmar, mover.
-fn organize_directory(target_dir: &Path) {
+/// Con `auto_confirm` no se pregunta antes de mover (modo script).
+/// Devuelve true si terminó sin errores (incluida una carpeta sin nada que
+/// organizar); false si el escaneo falló, hubo errores o se canceló.
+fn organize_directory(target_dir: &Path, auto_confirm: bool) -> bool {
     // Recopilar SOLO archivos sueltos en el directorio (sin recursión)
     let mut entries: Vec<FileEntry> = Vec::new();
 
     if let Err(e) = collect_files(target_dir, &mut entries) {
         eprintln!("Error al escanear: {}", e);
-        return;
+        return false;
     }
 
     // Orden estable por carpeta destino y nombre: preview agrupado y
@@ -69,22 +92,25 @@ fn organize_directory(target_dir: &Path) {
 
     if entries.is_empty() {
         println!("\n⚠️  No se encontraron archivos sueltos para organizar en esa ruta.");
-        return;
+        return true;
     }
 
     print_preview(&entries);
     println!("📊 Se moverán {} archivo(s) en total.\n", entries.len());
 
-    if confirm("¿Está seguro de que desea continuar? (s/n): ") {
-        let (moved, skipped, errors) = execute_moves(target_dir, &entries);
-
-        println!("\n✅ Resultado:");
-        println!("   Archivos movidos:  {moved}");
-        println!("   Omitidos:          {skipped}");
-        println!("   Errores:           {errors}");
-    } else {
+    if !auto_confirm && !confirm("¿Está seguro de que desea continuar? (s/n): ") {
         println!("❌ Operación cancelada. No se movió ningún archivo.");
+        return false;
     }
+
+    let (moved, skipped, errors) = execute_moves(target_dir, &entries);
+
+    println!("\n✅ Resultado:");
+    println!("   Archivos movidos:  {moved}");
+    println!("   Omitidos:          {skipped}");
+    println!("   Errores:           {errors}");
+
+    errors == 0
 }
 
 // ─────────────────────── RECOPILAR ARCHIVOS ─────────────────
