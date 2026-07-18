@@ -24,7 +24,10 @@ fn main() {
     let mut auto_confirm = false;
     let mut path_arg: Option<PathBuf> = None;
     for arg in env::args_os().skip(1) {
-        if arg == "--yes" || arg == "-y" {
+        if arg == "--help" || arg == "-h" {
+            print_usage();
+            return;
+        } else if arg == "--yes" || arg == "-y" {
             auto_confirm = true;
         } else if path_arg.is_none() {
             path_arg = Some(PathBuf::from(arg));
@@ -393,6 +396,22 @@ fn copy_then_remove(source: &Path, dest: &Path, rename_err: io::Error) -> Result
 }
 
 // ─────────────────────── UI HELPERS ─────────────────────────
+
+fn print_usage() {
+    println!("Uso: file-organizer-by-date [RUTA] [--yes|-y]");
+    println!();
+    println!("Sin argumentos se inicia el modo interactivo.");
+    println!();
+    println!("Opciones:");
+    println!("  RUTA        Organiza esa carpeta y termina (modo script)");
+    println!("  --yes, -y   No pide confirmación antes de mover (requiere RUTA)");
+    println!("  --help, -h  Muestra esta ayuda");
+    println!();
+    println!("Códigos de salida:");
+    println!("  0  Éxito (o nada que organizar)");
+    println!("  1  Hubo errores al mover, se canceló, o la ruta no es válida");
+    println!("  2  Argumentos incorrectos");
+}
 
 fn print_banner() {
     // La versión sale de Cargo.toml para no desincronizarse, y el marco se
