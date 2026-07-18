@@ -50,7 +50,8 @@ Before:                          After:
 
 ## 📋 Prerequisites
 
-- [Rust](https://www.rust-lang.org/tools/install) (1.56+ recommended)
+- [Rust](https://www.rust-lang.org/tools/install) 1.75 or newer (the code uses
+  `File::set_modified`, stabilized in 1.75)
 
 ---
 
