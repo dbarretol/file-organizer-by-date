@@ -178,8 +178,22 @@ fn execute_moves(base_dir: &Path, entries: &[FileEntry]) -> (u32, u32) {
                 println!("✔ {} → {}", entry.source.display(), dest_path.display());
                 moved += 1;
             }
-            Err(e) => {
-                eprintln!("✘ Error moviendo '{}': {}", entry.source.display(), e);
+            Err(MoveError::CopiedButOriginalRemains(e)) => {
+                eprintln!(
+                    "⚠️  '{}' se copió a '{}' pero no se pudo borrar el original (queda duplicado): {}",
+                    entry.source.display(),
+                    dest_path.display(),
+                    e
+                );
+                errors += 1;
+            }
+            Err(MoveError::Failed { rename, copy }) => {
+                eprintln!(
+                    "✘ Error moviendo '{}': {} (rename falló con: {})",
+                    entry.source.display(),
+                    copy,
+                    rename
+                );
                 errors += 1;
             }
         }
@@ -188,12 +202,28 @@ fn execute_moves(base_dir: &Path, entries: &[FileEntry]) -> (u32, u32) {
     (moved, errors)
 }
 
-fn move_file(source: &Path, dest: &Path) -> std::io::Result<()> {
-    fs::rename(source, dest).or_else(|_| -> std::io::Result<()> {
-        fs::copy(source, dest)?;
-        fs::remove_file(source)?;
-        Ok(())
-    })
+enum MoveError {
+    /// La copia al destino se completó, pero no se pudo borrar el original:
+    /// el archivo queda duplicado (origen y destino).
+    CopiedButOriginalRemains(io::Error),
+    /// No se pudo mover: fallaron tanto rename como copy.
+    Failed { rename: io::Error, copy: io::Error },
+}
+
+fn move_file(source: &Path, dest: &Path) -> Result<(), MoveError> {
+    let rename_err = match fs::rename(source, dest) {
+        Ok(()) => return Ok(()),
+        Err(e) => e,
+    };
+
+    if let Err(copy_err) = fs::copy(source, dest) {
+        return Err(MoveError::Failed {
+            rename: rename_err,
+            copy: copy_err,
+        });
+    }
+
+    fs::remove_file(source).map_err(MoveError::CopiedButOriginalRemains)
 }
 
 // ─────────────────────── UI HELPERS ─────────────────────────
