@@ -16,6 +16,19 @@ struct FileEntry {
 fn main() {
     print_banner();
 
+    // Modo scriptable: la ruta puede pasarse como argumento
+    // (p. ej. `file-organizer-by-date C:\Descargas`); se procesa una sola
+    // carpeta y se termina, sin el bucle interactivo.
+    if let Some(arg) = env::args_os().nth(1) {
+        let path = PathBuf::from(arg);
+        if !path.is_dir() {
+            eprintln!("✘ '{}' no existe o no es un directorio.", path.display());
+            std::process::exit(1);
+        }
+        organize_directory(&path);
+        return;
+    }
+
     loop {
         let target_dir = match ask_for_directory() {
             Some(dir) => dir,
@@ -25,30 +38,7 @@ fn main() {
             }
         };
 
-        // Recopilar SOLO archivos sueltos en el directorio (sin recursión)
-        let mut entries: Vec<FileEntry> = Vec::new();
-
-        if let Err(e) = collect_files(&target_dir, &mut entries) {
-            eprintln!("Error al escanear: {}", e);
-            continue;
-        }
-
-        if entries.is_empty() {
-            println!("\n⚠️  No se encontraron archivos sueltos para organizar en esa ruta.");
-        } else {
-            print_preview(&entries);
-            println!("📊 Se moverán {} archivo(s) en total.\n", entries.len());
-
-            if confirm("¿Está seguro de que desea continuar? (s/n): ") {
-                let (moved, errors) = execute_moves(&target_dir, &entries);
-
-                println!("\n✅ Resultado:");
-                println!("   Archivos movidos:  {moved}");
-                println!("   Errores:           {errors}");
-            } else {
-                println!("❌ Operación cancelada. No se movió ningún archivo.");
-            }
-        }
+        organize_directory(&target_dir);
 
         println!("\n─────────────────────────────────────────────");
         if !confirm("¿Desea organizar otra carpeta? (s/n, o presione 'q' para salir): ") {
@@ -56,6 +46,44 @@ fn main() {
             break;
         }
         println!();
+    }
+}
+
+/// Flujo completo sobre una carpeta: escanear, previsualizar, confirmar, mover.
+fn organize_directory(target_dir: &Path) {
+    // Recopilar SOLO archivos sueltos en el directorio (sin recursión)
+    let mut entries: Vec<FileEntry> = Vec::new();
+
+    if let Err(e) = collect_files(target_dir, &mut entries) {
+        eprintln!("Error al escanear: {}", e);
+        return;
+    }
+
+    // Orden estable por carpeta destino y nombre: preview agrupado y
+    // movimientos en orden predecible
+    entries.sort_by(|a, b| {
+        a.folder_name
+            .cmp(&b.folder_name)
+            .then_with(|| a.source.cmp(&b.source))
+    });
+
+    if entries.is_empty() {
+        println!("\n⚠️  No se encontraron archivos sueltos para organizar en esa ruta.");
+        return;
+    }
+
+    print_preview(&entries);
+    println!("📊 Se moverán {} archivo(s) en total.\n", entries.len());
+
+    if confirm("¿Está seguro de que desea continuar? (s/n): ") {
+        let (moved, skipped, errors) = execute_moves(target_dir, &entries);
+
+        println!("\n✅ Resultado:");
+        println!("   Archivos movidos:  {moved}");
+        println!("   Omitidos:          {skipped}");
+        println!("   Errores:           {errors}");
+    } else {
+        println!("❌ Operación cancelada. No se movió ningún archivo.");
     }
 }
 
@@ -76,6 +104,14 @@ fn collect_files(
             }
         };
         let path = entry.path();
+
+        // Decisión deliberada: los enlaces simbólicos se omiten. is_file() y
+        // metadata() siguen el enlace, así que se clasificaría por la fecha
+        // del destino y moverlo podría romper enlaces relativos.
+        if path.is_symlink() {
+            println!("⏭️  Se omite enlace simbólico: {}", path.display());
+            continue;
+        }
 
         // Solo archivos, ignorar carpetas por completo
         if !path.is_file() {
@@ -98,21 +134,25 @@ fn collect_files(
                 continue;
             }
         };
-        let datetime: DateTime<Local> = modified.into();
-        let folder_name = datetime.format("Y%Y-M%m").to_string();
-
         entries.push(FileEntry {
             source: path,
-            folder_name,
+            folder_name: folder_for(modified.into()),
         });
     }
     Ok(())
 }
 
+/// Nombre de la carpeta destino para una fecha de modificación dada.
+fn folder_for(datetime: DateTime<Local>) -> String {
+    datetime.format("Y%Y-M%m").to_string()
+}
+
 // ─────────────────────── EJECUTAR MOVIMIENTOS ───────────────
 
-fn execute_moves(base_dir: &Path, entries: &[FileEntry]) -> (u32, u32) {
+/// Devuelve (movidos, omitidos, errores).
+fn execute_moves(base_dir: &Path, entries: &[FileEntry]) -> (u32, u32, u32) {
     let mut moved = 0u32;
+    let mut skipped = 0u32;
     let mut errors = 0u32;
 
     'files: for entry in entries {
@@ -140,8 +180,10 @@ fn execute_moves(base_dir: &Path, entries: &[FileEntry]) -> (u32, u32) {
         }
 
         if !entry.source.exists() {
-            eprintln!("⏭️  Archivo ya no existe: {}", entry.source.display());
-            errors += 1;
+            // Desapareció entre el escaneo y la ejecución: no es un fallo
+            // nuestro, se cuenta como omitido
+            println!("⏭️  Archivo ya no existe: {}", entry.source.display());
+            skipped += 1;
             continue;
         }
 
@@ -235,7 +277,7 @@ fn execute_moves(base_dir: &Path, entries: &[FileEntry]) -> (u32, u32) {
         }
     }
 
-    (moved, errors)
+    (moved, skipped, errors)
 }
 
 enum MoveError {
@@ -321,8 +363,12 @@ fn copy_then_remove(source: &Path, dest: &Path, rename_err: io::Error) -> Result
 // ─────────────────────── UI HELPERS ─────────────────────────
 
 fn print_banner() {
+    // La versión sale de Cargo.toml para no desincronizarse
     println!("╔══════════════════════════════════════════════╗");
-    println!("║       📂 File Organizer by Date v0.4.0      ║");
+    println!(
+        "║       📂 File Organizer by Date v{}      ║",
+        env!("CARGO_PKG_VERSION")
+    );
     println!("║  Organiza archivos por fecha de modificación ║");
     println!("╚══════════════════════════════════════════════╝");
     println!();
@@ -388,25 +434,33 @@ fn confirm(prompt: &str) -> bool {
     }
 }
 
+/// Muestra las entradas agrupadas por carpeta destino, con un conteo por
+/// grupo y listando como máximo `MAX_PER_GROUP` archivos de cada uno.
+/// Asume que `entries` viene ordenado por `folder_name`.
 fn print_preview(entries: &[FileEntry]) {
+    const MAX_PER_GROUP: usize = 10;
+
     println!("\n🔍 Vista previa:");
     println!("─────────────────────────────────────────────");
 
-    if entries.len() <= 20 {
-        for entry in entries {
+    let mut start = 0;
+    while start < entries.len() {
+        let folder = &entries[start].folder_name;
+        let count = entries[start..]
+            .iter()
+            .take_while(|e| &e.folder_name == folder)
+            .count();
+
+        println!("   📁 {}/  ({} archivo(s))", folder, count);
+        for entry in &entries[start..start + count.min(MAX_PER_GROUP)] {
             let name = entry.source.file_name().unwrap_or_default().to_string_lossy();
-            println!("   {} → {}/", name, entry.folder_name);
+            println!("      {}", name);
         }
-    } else {
-        for entry in entries.iter().take(10) {
-            let name = entry.source.file_name().unwrap_or_default().to_string_lossy();
-            println!("   {} → {}/", name, entry.folder_name);
+        if count > MAX_PER_GROUP {
+            println!("      ... y {} más", count - MAX_PER_GROUP);
         }
-        println!("   ... y {} archivos más ...", entries.len() - 15);
-        for entry in entries.iter().skip(entries.len() - 5) {
-            let name = entry.source.file_name().unwrap_or_default().to_string_lossy();
-            println!("   {} → {}/", name, entry.folder_name);
-        }
+
+        start += count;
     }
 
     println!("─────────────────────────────────────────────");
@@ -452,6 +506,33 @@ fn is_self_executable(path: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::TimeZone;
+
+    #[test]
+    fn folder_for_formats_year_and_zero_padded_month() {
+        let dt = Local.with_ymd_and_hms(2026, 7, 18, 12, 0, 0).unwrap();
+        assert_eq!(folder_for(dt), "Y2026-M07");
+
+        let dt = Local.with_ymd_and_hms(1999, 12, 31, 23, 59, 59).unwrap();
+        assert_eq!(folder_for(dt), "Y1999-M12");
+    }
+
+    #[test]
+    fn resolve_conflict_picks_first_free_suffix() {
+        let dir = temp_dir("conflict");
+        fs::write(dir.join("a.txt"), "").unwrap();
+        fs::write(dir.join("a_1.txt"), "").unwrap();
+
+        let resolved = resolve_conflict(&dir, std::ffi::OsStr::new("a.txt")).unwrap();
+        assert_eq!(resolved.file_name().unwrap(), "a_2.txt");
+
+        // Archivo sin extensión
+        fs::write(dir.join("README"), "").unwrap();
+        let resolved = resolve_conflict(&dir, std::ffi::OsStr::new("README")).unwrap();
+        assert_eq!(resolved.file_name().unwrap(), "README_1");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
 
     fn temp_dir(name: &str) -> PathBuf {
         let dir = env::temp_dir().join(format!("fo_move_test_{name}"));
