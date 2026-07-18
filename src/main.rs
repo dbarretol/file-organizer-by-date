@@ -313,6 +313,10 @@ fn move_file(source: &Path, dest: &Path) -> Result<(), MoveError> {
 
     // El placeholder sigue en dest (rename no ocurrió) y es nuestro:
     // copy_then_remove lo rellena o lo retira si la copia falla.
+    // Si este remove falla (p. ej. un antivirus reteniendo el handle),
+    // copy_then_remove verá AlreadyExists y el reintento usará otro nombre,
+    // dejando atrás este placeholder vacío de 0 bytes. Riesgo asumido: es
+    // inofensivo y la alternativa (abortar el movimiento) sería peor.
     let _ = fs::remove_file(dest);
     copy_then_remove(source, dest, rename_err)
 }
@@ -609,7 +613,7 @@ mod tests {
         fs::write(&source, "nuevo").unwrap();
         fs::write(&dest, "original intacto").unwrap();
 
-        let rename_err = io::Error::new(io::ErrorKind::Other, "simulado");
+        let rename_err = io::Error::other("simulado");
         assert!(matches!(
             copy_then_remove(&source, &dest, rename_err),
             Err(MoveError::DestinationExists)
