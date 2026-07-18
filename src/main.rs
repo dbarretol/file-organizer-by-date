@@ -118,7 +118,19 @@ fn execute_moves(base_dir: &Path, entries: &[FileEntry]) -> (u32, u32) {
     for entry in entries {
         let dest_dir = base_dir.join(&entry.folder_name);
 
-        if !dest_dir.exists() {
+        if !dest_dir.is_dir() {
+            // La ruta destino puede existir como archivo (p. ej. un archivo
+            // llamado "Y2026-M07" sin extensión): reportar en vez de intentar
+            // mover dentro de algo que no es una carpeta.
+            if dest_dir.exists() {
+                eprintln!(
+                    "✘ '{}' ya existe pero no es una carpeta; se omite '{}'",
+                    dest_dir.display(),
+                    entry.source.display()
+                );
+                errors += 1;
+                continue;
+            }
             if let Err(e) = fs::create_dir_all(&dest_dir) {
                 eprintln!("✘ Error creando carpeta '{}': {}", dest_dir.display(), e);
                 errors += 1;
