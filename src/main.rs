@@ -29,7 +29,9 @@ fn main() {
         } else if path_arg.is_none() {
             path_arg = Some(PathBuf::from(arg));
         } else {
-            eprintln!("✘ Uso: file-organizer-by-date [RUTA] [--yes|-y]");
+            eprintln!("✘ Se recibió más de una ruta. Si la ruta contiene espacios, escríbala entre comillas:");
+            eprintln!("     file-organizer-by-date \"C:\\Mi Carpeta\"");
+            eprintln!("  Uso: file-organizer-by-date [RUTA] [--yes|-y]");
             std::process::exit(2);
         }
     }
@@ -393,14 +395,26 @@ fn copy_then_remove(source: &Path, dest: &Path, rename_err: io::Error) -> Result
 // ─────────────────────── UI HELPERS ─────────────────────────
 
 fn print_banner() {
-    // La versión sale de Cargo.toml para no desincronizarse
-    println!("╔══════════════════════════════════════════════╗");
-    println!(
-        "║       📂 File Organizer by Date v{}      ║",
-        env!("CARGO_PKG_VERSION")
-    );
-    println!("║  Organiza archivos por fecha de modificación ║");
-    println!("╚══════════════════════════════════════════════╝");
+    // La versión sale de Cargo.toml para no desincronizarse, y el marco se
+    // dimensiona según el texto para que cualquier longitud (0.4.0, 0.10.0…)
+    // quede centrada.
+    let title = format!("📂 File Organizer by Date v{}", env!("CARGO_PKG_VERSION"));
+    let subtitle = "Organiza archivos por fecha de modificación";
+
+    // Columnas de terminal: el emoji cuenta como 1 char pero ocupa 2 columnas
+    let title_cols = title.chars().count() + 1;
+    let subtitle_cols = subtitle.chars().count();
+    let inner = title_cols.max(subtitle_cols) + 4;
+
+    let centered = |text: &str, cols: usize| {
+        let left = (inner - cols) / 2;
+        format!("{}{}{}", " ".repeat(left), text, " ".repeat(inner - cols - left))
+    };
+
+    println!("╔{}╗", "═".repeat(inner));
+    println!("║{}║", centered(&title, title_cols));
+    println!("║{}║", centered(subtitle, subtitle_cols));
+    println!("╚{}╝", "═".repeat(inner));
     println!();
 }
 
@@ -622,6 +636,10 @@ mod tests {
             .set_modified(old_mtime)
             .unwrap();
 
+        // En Windows esto funciona porque set_modified explícito suprime la
+        // actualización implícita del last-write al cerrar el handle; si
+        // copy_then_remove pasara a fijar el mtime por ruta tras cerrar,
+        // este test detectaría la regresión.
         let rename_err = io::Error::other("simulado");
         assert!(copy_then_remove(&source, &dest, rename_err).is_ok());
         assert!(!source.exists());
