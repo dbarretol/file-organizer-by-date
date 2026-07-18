@@ -27,8 +27,10 @@ Before:                          After:
 - 🌍 **Cross-platform** — works on Windows, Linux, and macOS.
 - 💬 **Interactive mode** — prompts for the directory path and confirms before
   moving files.
+- 🤖 **Scriptable CLI mode** — pass the path as an argument (with optional
+  `--yes` to skip confirmation) and check the exit code (0/1/2) from scripts.
 - 🔍 **Dry-run preview** — shows exactly what will happen before any file is
-  moved.
+  moved, grouped by destination folder.
 - 📄 **Loose files only** — only moves files directly inside the target folder;
   subdirectories and their contents are never touched.
 - 📁 **Auto-creates folders** — generates `YXXXX-MXX` directories automatically.
@@ -36,15 +38,20 @@ Before:                          After:
   avoid overwriting files.
 - 🚫 **Self-protection** — the executable never moves itself.
 - 💾 **Cross-filesystem support** — falls back to copy + delete when `rename`
-  fails across different drives.
-- 📊 **Summary report** — displays a final count of moved and failed files.
+  fails across different drives, preserving the original modification date and
+  permissions.
+- 🔗 **Symlinks left alone** — symbolic links are skipped (moving them could
+  break relative targets and their date would be the target's, not the link's).
+- 📊 **Summary report** — displays a final count of moved, skipped, and failed
+  files.
 - 🔄 **Loop mode** — organize multiple folders in one session without restarting.
 
 ---
 
 ## 📋 Prerequisites
 
-- [Rust](https://www.rust-lang.org/tools/install) (1.56+ recommended)
+- [Rust](https://www.rust-lang.org/tools/install) 1.75 or newer (the code uses
+  `File::set_modified`, stabilized in 1.75)
 
 ---
 
@@ -70,40 +77,66 @@ target/release/file-organizer-by-date.exe  # Windows
 
 ## 📖 Usage
 
-```bash
-cargo run
-# or
-./target/release/file-organizer-by-date
+```text
+file-organizer-by-date [PATH] [--yes|-y]
 ```
+
+Run without arguments for **interactive mode**, or pass a path to organize a
+single folder and exit (**script mode**):
+
+```bash
+# Interactive mode
+./target/release/file-organizer-by-date
+
+# Script mode: shows the preview, asks for confirmation, then exits
+./target/release/file-organizer-by-date "C:\Users\me\Downloads"
+
+# Fully unattended: no confirmation prompt (use with care!)
+./target/release/file-organizer-by-date "C:\Users\me\Downloads" --yes
+```
+
+Quote the path if it contains spaces. `--help` / `-h` prints the usage text.
+
+### Exit codes
+
+Script mode returns a meaningful exit code so automation can detect failures:
+
+| Code | Meaning                                                            |
+|------|--------------------------------------------------------------------|
+| `0`  | Success (files moved without errors, or nothing to organize)       |
+| `1`  | Something went wrong: move errors, cancelled/EOF, or invalid path  |
+| `2`  | Incorrect arguments (e.g. multiple paths, `--yes` without a path)  |
 
 ### Interactive flow
 
 ```text
-╔══════════════════════════════════════════════╗
-║       📂 File Organizer by Date v0.4.0      ║
-║  Organiza archivos por fecha de modificación ║
-╚══════════════════════════════════════════════╝
+╔═══════════════════════════════════════════════╗
+║       📂 File Organizer by Date v0.5.0        ║
+║  Organiza archivos por fecha de modificación  ║
+╚═══════════════════════════════════════════════╝
 
 📁 Ingrese la ruta de la carpeta a organizar (o 'q' para salir): C:\Users\me\Downloads
 
 🔍 Vista previa:
 ─────────────────────────────────────────────
-   report.pdf → Y2024-M07/
-   image.png → Y2024-M07/
-   notes.txt → Y2025-M12/
+   📁 Y2024-M07/  (2 archivo(s))
+      image.png
+      report.pdf
+   📁 Y2025-M12/  (1 archivo(s))
+      notes.txt
 ─────────────────────────────────────────────
 📊 Se moverán 3 archivo(s) en total.
 
 ¿Está seguro de que desea continuar? (s/n): s
-
 📁 Carpeta creada: Y2024-M07
-✔ C:\Users\me\Downloads\report.pdf → C:\Users\me\Downloads\Y2024-M07\report.pdf
 ✔ C:\Users\me\Downloads\image.png → C:\Users\me\Downloads\Y2024-M07\image.png
+✔ C:\Users\me\Downloads\report.pdf → C:\Users\me\Downloads\Y2024-M07\report.pdf
 📁 Carpeta creada: Y2025-M12
 ✔ C:\Users\me\Downloads\notes.txt → C:\Users\me\Downloads\Y2025-M12\notes.txt
 
 ✅ Resultado:
    Archivos movidos:  3
+   Omitidos:          0
    Errores:           0
 
 ─────────────────────────────────────────────
