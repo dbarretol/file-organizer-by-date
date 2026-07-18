@@ -67,7 +67,14 @@ fn collect_files(
     entries: &mut Vec<FileEntry>,
 ) -> std::io::Result<()> {
     for entry in fs::read_dir(dir)? {
-        let entry = entry?;
+        // Errores por archivo: saltar con aviso en lugar de abortar el escaneo
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(e) => {
+                eprintln!("⏭️  Se omite una entrada ilegible: {}", e);
+                continue;
+            }
+        };
         let path = entry.path();
 
         // Solo archivos, ignorar carpetas por completo
@@ -80,8 +87,17 @@ fn collect_files(
             continue;
         }
 
-        let metadata = fs::metadata(&path)?;
-        let modified = metadata.modified()?;
+        let modified = match fs::metadata(&path).and_then(|m| m.modified()) {
+            Ok(modified) => modified,
+            Err(e) => {
+                eprintln!(
+                    "⏭️  Se omite '{}' (no se pudo leer su fecha de modificación): {}",
+                    path.display(),
+                    e
+                );
+                continue;
+            }
+        };
         let datetime: DateTime<Local> = modified.into();
         let folder_name = datetime.format("Y%Y-M%m").to_string();
 
