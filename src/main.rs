@@ -184,7 +184,11 @@ fn ask_for_directory() -> Option<PathBuf> {
         io::stdout().flush().unwrap();
 
         let mut input = String::new();
-        io::stdin().read_line(&mut input).unwrap();
+        // EOF (Ctrl+Z / pipe agotado): salir en lugar de reintentar para siempre
+        if io::stdin().read_line(&mut input).unwrap_or(0) == 0 {
+            println!();
+            return None;
+        }
         let input = input.trim();
 
         if input.eq_ignore_ascii_case("q") {
@@ -219,7 +223,11 @@ fn confirm(prompt: &str) -> bool {
         io::stdout().flush().unwrap();
 
         let mut input = String::new();
-        io::stdin().read_line(&mut input).unwrap();
+        // EOF (Ctrl+Z / pipe agotado): tratar como "no" en lugar de reintentar para siempre
+        if io::stdin().read_line(&mut input).unwrap_or(0) == 0 {
+            println!();
+            return false;
+        }
         let input = input.trim().to_lowercase();
 
         match input.as_str() {
