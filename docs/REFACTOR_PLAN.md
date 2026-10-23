@@ -54,15 +54,14 @@ deben seguir pasando en cada fase.
   - `cargo fmt --check`
   - `cargo clippy --all-targets -- -D warnings`
   - `cargo test`
-  - build con la MSRV declarada (1.75)
+  - build con la MSRV declarada (1.82) en Linux y Windows
 
 **Criterio de aceptación:** el CI pasa en las tres plataformas.
 
-> ⚠️ **MSRV real en Windows:** con el `Cargo.lock` actual, `chrono` →
-> `iana-time-zone` → `windows-core` 0.62 exige Rust 1.82. En Linux, 1.75 es
-> correcto (el job de MSRV corre en Ubuntu). Hay dos opciones: subir
-> `rust-version` a 1.82, o fijar versiones antiguas de esas dependencias en el
-> lock. Queda pendiente de decidir.
+> **MSRV: 1.82.** Con el `Cargo.lock` actual, `chrono` → `iana-time-zone` →
+> `windows-core` 0.62 exige Rust 1.82 en Windows. Se optó por subir
+> `rust-version` en lugar de fijar dependencias antiguas en el lock (frágil
+> ante `cargo update`). El job de MSRV corre en Linux y en Windows.
 
 ---
 
@@ -91,7 +90,7 @@ src/
 ### API del núcleo
 
 ```rust
-pub fn scan(dir: &Path) -> io::Result<Plan>;
+pub fn scan(dir: &Path, options: &Options) -> io::Result<Plan>;
 pub fn execute(plan: &Plan, on_event: &mut dyn FnMut(Event)) -> Summary;
 
 pub struct Plan        { pub base: PathBuf, pub moves: Vec<PlannedMove>, pub warnings: Vec<ScanWarning> }
@@ -156,16 +155,27 @@ no devuelve nada, la salida de la CLI es idéntica y los tests pasan.
 
 **Resuelve:** D6. Valida que la arquitectura admite features sin fricción.
 
-- [ ] `clap` con `derive`. Mantener `RUTA`, `--yes/-y`, `--help/-h` y los
-      códigos de salida (clap usa el 2 para errores de uso, el mismo que hoy).
-- [ ] `pub struct Options { granularity: Granularity, … }`, que se pasa a `scan`.
-- [ ] `pub enum Granularity { Year, Month, Day }`, con `Month` por defecto.
+- [x] `clap` con `derive` (`src/cli/args.rs`). Se mantienen `RUTA`, `--yes/-y`,
+      `--help/-h` (y se añade `-V/--version`) y los códigos de salida: clap
+      usa el 2 para errores de uso y el 0 para la ayuda.
+  - La ayuda está en español (`help_template`, `override_usage` y
+    encabezados propios). **Limitación:** los mensajes de error de clap
+    ("error: unexpected argument…") siguen en inglés; clap no ofrece i18n.
+  - Se conserva la pista de "escriba la ruta entre comillas" cuando sobra un
+    argumento posicional.
+- [x] `pub struct Options { granularity }` (`src/options.rs`), que se pasa a
+      `scan`. `Default` conserva el comportamiento anterior.
+- [x] `pub enum Granularity { Year, Month, Day }`, con `Month` por defecto, y
       `folder_for(dt, granularity)`:
   - `Year`: `Y2024`
-  - `Month`: `Y2024-M01` (actual)
+  - `Month`: `Y2024-M01`
   - `Day`: `Y2024-M01-D15`
-- [ ] Flag `--by-day` (y quizá `--by-year`). Más adelante, `--group-by <year|month|day>`.
-- [ ] Tests de `folder_for` para cada granularidad.
+- [x] `--group-by <year|month|day>` y su atajo `--by-day` (en conflicto entre
+      sí). La CLI tiene su propio `GroupBy` (`ValueEnum`), de modo que el
+      núcleo no depende de clap.
+- [x] Tests: `folder_for` en cada granularidad, `scan` con `Day` y el parseo
+      de argumentos (`--yes` sin ruta, dos rutas, conflicto entre
+      `--by-day` y `--group-by`).
 
 ## Fase 5: Más features sobre `Options`
 
@@ -220,7 +230,7 @@ Cada una toca un único punto:
 | 1. Higiene | ✅ (salvo `repository`, que espera a que exista un remoto) |
 | 2. lib/bin + eventos | ✅ |
 | 3. Claridad + bugs | ✅ |
-| 4. clap + `--by-day` | ⏳ |
+| 4. clap + `--by-day` | ✅ |
 | 5. Features sobre `Options` | ⏳ |
 | 6. Journal + `--undo` | ⏳ |
 | 7. Workspace + GUI | ⏳ |
