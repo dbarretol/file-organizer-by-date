@@ -30,7 +30,7 @@ jobs:
       - run: cargo test --locked
 
   msrv:
-    # Windows incluido: sus dependencias (windows-core) son las que fijan la MSRV
+    # Windows included: its dependencies (windows-core) are what set the MSRV
     strategy:
       fail-fast: false
       matrix:
