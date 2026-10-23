@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use clap::{ArgAction, Parser, ValueEnum};
-use file_organizer_by_date::{Granularity, Options};
+use file_organizer_by_date::{DateSource, ExtensionFilter, Granularity, Options};
 
 const EXIT_CODES_HELP: &str = "\
 Códigos de salida:
@@ -49,6 +49,27 @@ pub struct Cli {
     #[arg(long, conflicts_with = "group_by")]
     pub by_day: bool,
 
+    /// Fecha que decide la carpeta: modified (por defecto) o created
+    #[arg(
+        long,
+        value_enum,
+        value_name = "FECHA",
+        default_value_t = DateArg::Modified,
+        hide_default_value = true,
+        hide_possible_values = true
+    )]
+    pub date: DateArg,
+
+    /// Solo mueve archivos con estas extensiones, separadas por comas
+    /// (p. ej. jpg,png)
+    #[arg(short, long, value_name = "EXTS", value_delimiter = ',')]
+    pub extensions: Vec<String>,
+
+    /// Incluye los archivos de las subcarpetas (salta las carpetas Y####…
+    /// ya organizadas) y los mueve a las carpetas por fecha de RUTA
+    #[arg(short, long)]
+    pub recursive: bool,
+
     /// Muestra esta ayuda
     #[arg(short, long, action = ArgAction::Help)]
     help: Option<bool>,
@@ -67,6 +88,13 @@ pub enum GroupBy {
     Day,
 }
 
+/// Reflejo de `DateSource`.
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DateArg {
+    Modified,
+    Created,
+}
+
 impl Cli {
     pub fn options(&self) -> Options {
         let group_by = if self.by_day {
@@ -80,6 +108,13 @@ impl Cli {
                 GroupBy::Month => Granularity::Month,
                 GroupBy::Day => Granularity::Day,
             },
+            date_source: match self.date {
+                DateArg::Modified => DateSource::Modified,
+                DateArg::Created => DateSource::Created,
+            },
+            extensions: (!self.extensions.is_empty())
+                .then(|| ExtensionFilter::new(&self.extensions)),
+            recursive: self.recursive,
         }
     }
 }
@@ -104,7 +139,32 @@ mod tests {
         let cli = parse(&[]).unwrap();
         assert!(cli.path.is_none());
         assert!(!cli.yes);
-        assert_eq!(cli.options().granularity, Granularity::Month);
+        let options = cli.options();
+        assert_eq!(options.granularity, Granularity::Month);
+        assert_eq!(options.date_source, DateSource::Modified);
+        assert!(options.extensions.is_none());
+        assert!(!options.recursive);
+    }
+
+    #[test]
+    fn scan_options_are_mapped() {
+        let cli = parse(&[
+            "-r",
+            "--date",
+            "created",
+            "--extensions",
+            "jpg,.PNG",
+            "-e",
+            "gif",
+        ])
+        .unwrap();
+        let options = cli.options();
+        assert!(options.recursive);
+        assert_eq!(options.date_source, DateSource::Created);
+        assert_eq!(
+            options.extensions.unwrap().extensions(),
+            ["gif", "jpg", "png"]
+        );
     }
 
     #[test]

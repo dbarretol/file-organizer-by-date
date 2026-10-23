@@ -3,7 +3,7 @@
 use std::io;
 use std::path::Path;
 
-use file_organizer_by_date::{Event, Failure, Plan, ScanWarning, Summary};
+use file_organizer_by_date::{DateSource, Event, Failure, Plan, ScanWarning, Summary};
 
 /// Máximo de archivos listados por carpeta en la vista previa.
 const MAX_PREVIEW_PER_GROUP: usize = 10;
@@ -61,9 +61,22 @@ pub fn warnings(warnings: &[ScanWarning]) {
             ScanWarning::Symlink(path) => {
                 println!("⏭️  Se omite enlace simbólico: {}", path.display())
             }
-            ScanWarning::NoModifiedDate { path, error } => eprintln!(
-                "⏭️  Se omite '{}' (no se pudo leer su fecha de modificación): {}",
+            ScanWarning::UnreadableDir { path, error } => eprintln!(
+                "⏭️  Se omite la carpeta '{}' (no se pudo leer): {}",
                 path.display(),
+                error
+            ),
+            ScanWarning::NoDate {
+                path,
+                source,
+                error,
+            } => eprintln!(
+                "⏭️  Se omite '{}' (no se pudo leer su fecha de {}): {}",
+                path.display(),
+                match source {
+                    DateSource::Modified => "modificación",
+                    DateSource::Created => "creación",
+                },
                 error
             ),
         }
@@ -93,12 +106,13 @@ pub fn preview(plan: &Plan) {
 
         println!("   📁 {}/  ({} archivo(s))", folder, count);
         for planned in &moves[start..start + count.min(MAX_PREVIEW_PER_GROUP)] {
-            let name = planned
+            // Relativa a la base: en modo recursivo distingue archivos
+            // homónimos de distintas subcarpetas; sin él es solo el nombre.
+            let shown = planned
                 .source
-                .file_name()
-                .unwrap_or_default()
-                .to_string_lossy();
-            println!("      {}", name);
+                .strip_prefix(&plan.base)
+                .unwrap_or(&planned.source);
+            println!("      {}", shown.display());
         }
         if count > MAX_PREVIEW_PER_GROUP {
             println!("      ... y {} más", count - MAX_PREVIEW_PER_GROUP);
