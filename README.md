@@ -33,7 +33,8 @@ Before:                          After:
   moved, grouped by destination folder.
 - 📄 **Loose files only** — only moves files directly inside the target folder;
   subdirectories and their contents are never touched.
-- 📁 **Auto-creates folders** — generates `YXXXX-MXX` directories automatically.
+- 📁 **Auto-creates folders** — generates `YXXXX-MXX` directories automatically
+  (or `YXXXX` / `YXXXX-MXX-DXX` with `--group-by year|day`).
 - 🛡️ **Name conflict resolution** — appends numeric suffixes (`_1`, `_2`...) to
   avoid overwriting files.
 - 🚫 **Self-protection** — the executable never moves itself.
@@ -50,8 +51,8 @@ Before:                          After:
 
 ## 📋 Prerequisites
 
-- [Rust](https://www.rust-lang.org/tools/install) 1.75 or newer (the code uses
-  `File::set_modified`, stabilized in 1.75)
+- [Rust](https://www.rust-lang.org/tools/install) 1.82 or newer (required by
+  the Windows dependencies of `chrono`; CI verifies this minimum)
 
 ---
 
@@ -78,8 +79,17 @@ target/release/file-organizer-by-date.exe  # Windows
 ## 📖 Usage
 
 ```text
-file-organizer-by-date [PATH] [--yes|-y]
+file-organizer-by-date [OPTIONS] [PATH]
 ```
+
+| Option               | Description                                            |
+|----------------------|--------------------------------------------------------|
+| `PATH`               | Organize that folder and exit (script mode)            |
+| `-y`, `--yes`        | Don't ask for confirmation (requires `PATH`)           |
+| `--group-by <LEVEL>` | Folder granularity: `year`, `month` (default) or `day` |
+| `--by-day`           | Shortcut for `--group-by day`                          |
+| `-h`, `--help`       | Print help                                             |
+| `-V`, `--version`    | Print version                                          |
 
 Run without arguments for **interactive mode**, or pass a path to organize a
 single folder and exit (**script mode**):
@@ -93,9 +103,13 @@ single folder and exit (**script mode**):
 
 # Fully unattended: no confirmation prompt (use with care!)
 ./target/release/file-organizer-by-date "C:\Users\me\Downloads" --yes
+
+# One folder per day (Y2024-M01-D15) instead of per month
+./target/release/file-organizer-by-date "C:\Users\me\Downloads" --by-day
 ```
 
-Quote the path if it contains spaces. `--help` / `-h` prints the usage text.
+Quote the path if it contains spaces. The grouping options also apply to
+interactive mode.
 
 ### Exit codes
 
@@ -105,7 +119,7 @@ Script mode returns a meaningful exit code so automation can detect failures:
 |------|--------------------------------------------------------------------|
 | `0`  | Success (files moved without errors, or nothing to organize)       |
 | `1`  | Something went wrong: move errors, cancelled/EOF, or invalid path  |
-| `2`  | Incorrect arguments (e.g. multiple paths, `--yes` without a path)  |
+| `2`  | Incorrect arguments (e.g. multiple paths, `--yes` without a path, unknown `--group-by` value) |
 
 ### Interactive flow
 
@@ -148,17 +162,14 @@ Script mode returns a meaningful exit code so automation can detect failures:
 
 ## 📁 Folder Naming Convention
 
-Files are organized into folders using the pattern:
+By default files are organized into folders using the pattern
+`Y<year>-M<month>`. `--group-by` changes the granularity:
 
-```
-Y<year>-M<month>
-```
-
-| Example Folder | Meaning        |
-|----------------|----------------|
-| `Y2024-M01`    | January 2024   |
-| `Y2025-M12`    | December 2025  |
-| `Y2026-M04`    | April 2026     |
+| `--group-by`       | Pattern                   | Example         |
+|--------------------|---------------------------|-----------------|
+| `year`             | `Y<year>`                 | `Y2024`         |
+| `month` (default)  | `Y<year>-M<month>`        | `Y2024-M01`     |
+| `day` / `--by-day` | `Y<year>-M<month>-D<day>` | `Y2024-M01-D15` |
 
 ---
 
@@ -191,6 +202,7 @@ printing, so other frontends (e.g. a GUI) can reuse it as-is.
 | Crate                                     | Purpose                          |
 |-------------------------------------------|----------------------------------|
 | [chrono](https://crates.io/crates/chrono) | Date/time formatting and parsing |
+| [clap](https://crates.io/crates/clap)     | Command-line argument parsing    |
 
 ---
 
@@ -233,7 +245,7 @@ This project is licensed under the [MIT License](LICENSE).
 - [x] ~~Dry-run preview before moving files~~
 - [x] ~~Interactive mode with confirmation prompt~~
 - [x] ~~Loop mode to organize multiple folders~~
-- [ ] Add `--by-day` flag to organize by day (`Y2024-M01-D15`)
+- [x] ~~Add `--by-day` flag to organize by day (`Y2024-M01-D15`)~~
 - [ ] Add `--undo` flag to reverse the last organization
 - [ ] Add `--extensions` flag to filter by file type
 - [ ] Add recursive mode with `--recursive` flag
