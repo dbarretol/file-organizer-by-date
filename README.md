@@ -26,9 +26,6 @@ Downloads/                       Downloads/
                                      └── stuff.txt
 ```
 
-> 🌐 **Language note:** the program's on-screen messages are in **Spanish**.
-> Command-line options and this README are in English.
-
 ---
 
 ## ✨ Highlights
@@ -127,31 +124,29 @@ file-organizer-by-date ~/Downloads --yes --log ~/organizer.log
 
 ### What a run looks like
 
-Messages are in Spanish:
-
 ```text
-🔍 Vista previa:
+🔍 Preview:
 ─────────────────────────────────────────────
-   📁 Y2024-M07/  (2 archivo(s))
+   📁 Y2024-M07/  (2 file(s))
       image.png
       report.pdf
-   📁 Y2025-M12/  (1 archivo(s))
+   📁 Y2025-M12/  (1 file(s))
       notes.txt
 ─────────────────────────────────────────────
-📊 Se moverán 3 archivo(s) en total.
+📊 3 file(s) will be moved in total.
 
-¿Está seguro de que desea continuar? (s/n): s
-📁 Carpeta creada: Y2024-M07
+Do you want to continue? (y/n): y
+📁 Folder created: Y2024-M07
 ✔ C:\Users\me\Downloads\image.png → C:\Users\me\Downloads\Y2024-M07\image.png
 ✔ C:\Users\me\Downloads\report.pdf → C:\Users\me\Downloads\Y2024-M07\report.pdf
-📁 Carpeta creada: Y2025-M12
+📁 Folder created: Y2025-M12
 ✔ C:\Users\me\Downloads\notes.txt → C:\Users\me\Downloads\Y2025-M12\notes.txt
 
-✅ Resultado:
-   Archivos movidos:  3
-   Omitidos:          0
-   Errores:           0
-↩️  Puede deshacerlo con: file-organizer-by-date "C:\Users\me\Downloads" --undo
+✅ Result:
+   Files moved:  3
+   Skipped:      0
+   Errors:       0
+↩️  To undo this run: file-organizer-by-date "C:\Users\me\Downloads" --undo
 ```
 
 ### Exit codes
@@ -255,7 +250,7 @@ src/
 └── cli/            # Argument parsing, prompts, output rendering, log file
 ```
 
-Design documents, in Spanish:
+Design documents:
 [`docs/REFACTOR_PLAN.md`](docs/REFACTOR_PLAN.md) (architecture and history)
 and [`docs/GUI_DESIGN.md`](docs/GUI_DESIGN.md) (future desktop app).
 

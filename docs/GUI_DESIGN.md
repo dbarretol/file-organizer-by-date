@@ -1,163 +1,161 @@
-# Diseño de la GUI (trabajo futuro)
+# GUI design (future work)
 
-> **Estado:** diseño aprobado, sin implementar. Se desarrollará en una rama
-> propia (propuesta: `feature/gui`) a partir de `main` una vez integrada
-> `refactor/core-lib`.
+> **Status:** design approved, not implemented. It will be built on its own
+> branch (proposed: `feature/gui`) off `main`, once `refactor/core-lib` is
+> merged.
 >
-> **Requisito previo:** el núcleo ya está preparado (fases 1 a 6 de
+> **Prerequisite:** the core is already prepared (phases 1 to 6 of
 > [`REFACTOR_PLAN.md`](REFACTOR_PLAN.md)). `scan`, `execute`, `undo`,
-> `Options`, `Event` y `Journal` no imprimen ni leen stdin, así que la GUI los
-> consume directamente.
+> `Options`, `Event` and `Journal` never print or read stdin, so the GUI uses
+> them directly.
 
-## Índice
+## Contents
 
-1. [Objetivos y usuario](#1-objetivos-y-usuario)
-2. [Principios de usabilidad](#2-principios-de-usabilidad)
-3. [Tecnología](#3-tecnología)
-4. [Arquitectura](#4-arquitectura)
-5. [Cambios necesarios en el núcleo](#5-cambios-necesarios-en-el-núcleo)
-6. [Flujo y pantallas](#6-flujo-y-pantallas)
-7. [Detalle de componentes](#7-detalle-de-componentes)
-8. [Estados, errores y casos límite](#8-estados-errores-y-casos-límite)
-9. [Accesibilidad e idioma](#9-accesibilidad-e-idioma)
-10. [Persistencia de preferencias](#10-persistencia-de-preferencias)
-11. [Empaquetado y distribución](#11-empaquetado-y-distribución)
-12. [Estrategia de pruebas](#12-estrategia-de-pruebas)
-13. [Plan de trabajo por hitos](#13-plan-de-trabajo-por-hitos)
-14. [Criterios de aceptación](#14-criterios-de-aceptación)
-15. [Riesgos y decisiones abiertas](#15-riesgos-y-decisiones-abiertas)
-
----
-
-## 1. Objetivos y usuario
-
-**Para quién:** alguien que no usa la terminal y quiere ordenar una carpeta
-caótica (Descargas, fotos del móvil, escritorio) sin miedo a perder archivos.
-
-**Qué debe poder hacer, en orden de importancia:**
-
-1. Elegir una carpeta, ver **qué va a pasar** y confirmarlo, en menos de 30
-   segundos y sin leer documentación.
-2. **Deshacer** con un clic si el resultado no le gusta.
-3. Ajustar opciones comunes (por año, mes o día; solo fotos; incluir
-   subcarpetas) sin entender conceptos técnicos.
-4. Excluir archivos concretos antes de ejecutar.
-
-**Fuera de alcance de la primera versión:** reglas personalizadas, varias
-carpetas a la vez, programar ejecuciones, vigilar carpetas en segundo plano y
-EXIF.
+1. [Goals and user](#1-goals-and-user)
+2. [Usability principles](#2-usability-principles)
+3. [Technology](#3-technology)
+4. [Architecture](#4-architecture)
+5. [Required core changes](#5-required-core-changes)
+6. [Flow and screens](#6-flow-and-screens)
+7. [Component details](#7-component-details)
+8. [States, errors and edge cases](#8-states-errors-and-edge-cases)
+9. [Accessibility and language](#9-accessibility-and-language)
+10. [Persisted preferences](#10-persisted-preferences)
+11. [Packaging and distribution](#11-packaging-and-distribution)
+12. [Testing strategy](#12-testing-strategy)
+13. [Milestones](#13-milestones)
+14. [Acceptance criteria](#14-acceptance-criteria)
+15. [Risks and open decisions](#15-risks-and-open-decisions)
 
 ---
 
-## 2. Principios de usabilidad
+## 1. Goals and user
 
-| # | Principio | Cómo se aplica |
-|---|-----------|----------------|
-| P1 | **Nada se mueve sin una vista previa y un clic explícito** | El botón "Organizar" solo se activa con un plan calculado y visible. No hay modo "sin confirmar" en la GUI |
-| P2 | **Siempre se puede volver atrás** | Tras organizar, "Deshacer" ocupa el lugar del botón principal. Al abrir una carpeta con journal se ofrece deshacer la ejecución anterior |
-| P3 | **Valores por defecto seguros y útiles** | Mes, fecha de modificación, sin recursión y todos los tipos: lo mismo que la CLI sin flags |
-| P4 | **Lenguaje llano** | "Incluir subcarpetas" en lugar de "recursivo"; "Fecha de creación" en lugar de "ctime"; nada de `Y2024-M01` sin un ejemplo al lado |
-| P5 | **Feedback inmediato** | Cambiar una opción recalcula la vista previa (con *debounce*). Las operaciones largas muestran progreso y se pueden cancelar |
-| P6 | **Errores explicados y accionables** | Cada error dice qué pasó, a qué archivo afecta y qué puede hacer el usuario. No se muestran códigos de error del SO sin contexto |
-| P7 | **Una sola ventana y un flujo lineal** | Elegir, revisar, organizar y ver el resultado o deshacer. Sin pestañas ni menús anidados |
-| P8 | **La interfaz nunca se congela** | Escanear, mover y deshacer corren en un hilo de trabajo |
+**Who it's for:** someone who doesn't use the terminal and wants to tidy up a
+messy folder (Downloads, phone photos, desktop) without fear of losing files.
+
+**What they must be able to do, in order of importance:**
+
+1. Pick a folder, see **what will happen** and confirm it, in under 30
+   seconds and without reading any documentation.
+2. **Undo** with one click if they don't like the result.
+3. Tweak common options (by year, month or day; photos only; include
+   subfolders) without understanding technical concepts.
+4. Exclude specific files before running.
+
+**Out of scope for the first version:** custom rules, several folders at
+once, scheduled runs, watching folders in the background, and EXIF.
 
 ---
 
-## 3. Tecnología
+## 2. Usability principles
 
-**Decisión: `eframe`/`egui`**, la versión estable más reciente en el momento
-de crear la rama.
+| # | Principle | How it's applied |
+|---|-----------|------------------|
+| P1 | **Nothing moves without a preview and an explicit click** | The "Organize" button is only enabled with a computed, visible plan. There is no "don't ask" mode in the GUI |
+| P2 | **You can always go back** | After organizing, "Undo" takes the place of the main button. Opening a folder that has a journal offers to undo the previous run |
+| P3 | **Safe, useful defaults** | Month, modification date, no recursion and all file types: the same as the CLI with no flags |
+| P4 | **Plain language** | "Include subfolders" instead of "recursive"; "Date created" instead of "ctime"; never `Y2024-M01` without an example next to it |
+| P5 | **Immediate feedback** | Changing an option recomputes the preview (debounced). Long operations show progress and can be cancelled |
+| P6 | **Errors are explained and actionable** | Every error says what happened, which file it affects and what the user can do. No raw OS error codes without context |
+| P7 | **One window, a linear flow** | Pick, review, organize, then see the result or undo. No tabs or nested menus |
+| P8 | **The UI never freezes** | Scanning, moving and undoing run on a worker thread |
 
-| Criterio | egui (elegido) | Tauri (alternativa) |
-|----------|----------------|---------------------|
-| Lenguaje | 100 % Rust | Rust + HTML/CSS/JS |
-| Binario | Uno, sin runtime | Necesita WebView2 (Windows) o WebKitGTK |
-| Integración con el núcleo | Llamada directa | Comandos IPC serializados |
-| Aspecto | Funcional, no nativo | Libre (web) |
-| Coste de mantenimiento | Bajo | Dos ecosistemas |
+---
 
-**Crates de apoyo:**
+## 3. Technology
 
-| Crate | Uso |
+**Decision: `eframe`/`egui`**, the latest stable version when the branch is
+created.
+
+| Criterion | egui (chosen) | Tauri (alternative) |
+|-----------|---------------|---------------------|
+| Language | 100% Rust | Rust + HTML/CSS/JS |
+| Binary | Single, no runtime | Needs WebView2 (Windows) or WebKitGTK |
+| Core integration | Direct calls | Serialized IPC commands |
+| Look | Functional, not native | Anything (web) |
+| Maintenance cost | Low | Two ecosystems |
+
+**Supporting crates:**
+
+| Crate | Use |
 |-------|-----|
-| `eframe` (+ feature `persistence`) | Ventana, bucle de eventos y guardado de preferencias |
-| `egui_extras` | `TableBuilder` con filas virtualizadas (miles de archivos) |
-| `rfd` | Diálogo nativo "Seleccionar carpeta" |
-| `opener` | "Abrir carpeta en el explorador" al terminar |
-| `egui_kittest` (dev) | Tests de interacción con la UI |
+| `eframe` (+ `persistence` feature) | Window, event loop and saved preferences |
+| `egui_extras` | `TableBuilder` with virtualized rows (thousands of files) |
+| `rfd` | Native "Select folder" dialog |
+| `opener` | "Open folder in file explorer" when done |
+| `egui_kittest` (dev) | UI interaction tests |
 
-> **MSRV:** `eframe` suele exigir un Rust más reciente que el núcleo (hoy
-> 1.82). Por eso la GUI va en su propio crate con su propio `rust-version`:
-> el núcleo y la CLI conservan la suya.
+> **MSRV:** `eframe` usually requires a newer Rust than the core (currently
+> 1.82). That's why the GUI lives in its own crate with its own
+> `rust-version`: the core and the CLI keep theirs.
 
 ---
 
-## 4. Arquitectura
+## 4. Architecture
 
 ### 4.1 Workspace
 
-Primer paso de la rama: convertir el repo en un workspace **sin cambiar el
-comportamiento de la CLI**.
+First step on the branch: turn the repo into a workspace **without changing
+the CLI's behavior**.
 
 ```text
 Cargo.toml                    # [workspace] members = ["crates/*"]
 crates/
 ├── organizer-core/           # src/{lib,plan,executor,event,fs_ops,grouping,
-│                             #      options,filter,journal}.rs (movidos tal cual)
-├── organizer-cli/            # src/{main.rs, cli/}  → binario `file-organizer-by-date`
-└── organizer-gui/            # binario `file-organizer-gui`
+│                             #      options,filter,journal}.rs (moved as is)
+├── organizer-cli/            # src/{main.rs, cli/}  → `file-organizer-by-date` binary
+└── organizer-gui/            # `file-organizer-gui` binary
     └── src/
-        ├── main.rs           # arranque de eframe, icono, tamaño mínimo
-        ├── app.rs            # impl eframe::App: solo dibuja y despacha mensajes
-        ├── state.rs          # AppState + Message + update(): lógica pura, testeable
-        ├── worker.rs         # hilo de trabajo: scan / execute / undo → canal
+        ├── main.rs           # eframe startup, icon, minimum size
+        ├── app.rs            # impl eframe::App: only draws and dispatches messages
+        ├── state.rs          # AppState + Message + update(): pure, testable logic
+        ├── worker.rs         # worker thread: scan / execute / undo → channel
         ├── views/
-        │   ├── folder.rs     # selector de carpeta + aviso de "deshacer anterior"
-        │   ├── options.rs    # panel de opciones
-        │   ├── preview.rs    # tabla agrupada con casillas
-        │   ├── progress.rs   # barra + log en vivo + cancelar
-        │   └── result.rs     # resumen + deshacer + abrir carpeta
-        └── text.rs           # todas las cadenas visibles (base para i18n)
+        │   ├── folder.rs     # folder picker + "undo previous run" notice
+        │   ├── options.rs    # options panel
+        │   ├── preview.rs    # grouped table with checkboxes
+        │   ├── progress.rs   # progress bar + live log + cancel
+        │   └── result.rs     # summary + undo + open folder
+        └── text.rs           # every visible string (basis for i18n)
 ```
 
-- **El nombre del paquete de la CLI se mantiene** (`file-organizer-by-date`),
-  para no romper instalaciones ni scripts.
-- **CI:** se añade `organizer-gui` a la matriz. En Linux hacen falta las
-  dependencias de sistema de eframe; si el crate tiene otra MSRV, también un
-  job propio.
+- **The CLI package name stays** `file-organizer-by-date`, so existing
+  installs and scripts keep working.
+- **CI:** add `organizer-gui` to the matrix. On Linux it needs eframe's
+  system dependencies, and its own job if its MSRV differs.
 
-### 4.2 Modelo de hilos
+### 4.2 Threading model
 
 ```text
-┌──────────── hilo UI (egui) ────────────┐        ┌──── hilo de trabajo ────┐
-│ AppState ──Message──► update()         │        │                         │
-│     ▲                    │ Command      │  cmd   │ scan(dir, &options)     │
-│     │                    └─────────────┼───────►│ execute(plan, on_event, │
-│     │                                  │        │         &cancel)        │
-│     │   WorkerMsg (Plan, Event,        │  msgs  │ undo(base, &journal, …) │
-│     └── Summary, UndoResult, error) ◄──┼────────│                         │
-│         + ctx.request_repaint()        │        └─────────────────────────┘
-└────────────────────────────────────────┘
+┌────────────── UI thread (egui) ─────────┐        ┌───── worker thread ──────┐
+│ AppState ──Message──► update()          │        │                          │
+│     ▲                    │ Command      │  cmd   │ scan(dir, &options)      │
+│     │                    └──────────────┼───────►│ execute(plan, on_event,  │
+│     │                                   │        │         &cancel)         │
+│     │   WorkerMsg (Plan, Event,         │  msgs  │ undo(base, &journal, …)  │
+│     └── Summary, UndoResult, error) ◄───┼────────│                          │
+│         + ctx.request_repaint()         │        └──────────────────────────┘
+└─────────────────────────────────────────┘
 ```
 
-- **Un único hilo de trabajo de larga vida**, que recibe `Command` por
-  `std::sync::mpsc`. Basta, porque la app nunca hace dos operaciones de disco
-  a la vez.
-- **El worker envía cada `Event` por el canal** y llama a
-  `egui::Context::request_repaint()` para que la UI despierte.
-- **Cancelación:** un `Arc<AtomicBool>` compartido (ver §5.2).
-- **Re-escaneos por cambio de opciones:** cada `Command::Scan` lleva un
-  `generation: u64`. La UI descarta los `Plan` de generaciones antiguas, sin
-  necesidad de bloqueos.
+- **A single long-lived worker thread** receives `Command`s over
+  `std::sync::mpsc`. That's enough, because the app never runs two disk
+  operations at once.
+- **The worker sends each `Event` over the channel** and calls
+  `egui::Context::request_repaint()` so the UI wakes up.
+- **Cancellation:** a shared `Arc<AtomicBool>` (see §5.2).
+- **Re-scans when options change:** each `Command::Scan` carries a
+  `generation: u64`. The UI drops `Plan`s from old generations, with no locks
+  needed.
 
-### 4.3 Estado como máquina de estados
+### 4.3 State as a state machine
 
 ```rust
 enum Screen {
-    PickFolder,                                   // sin carpeta
+    PickFolder,                                   // no folder yet
     Scanning { generation: u64 },
-    Review { plan: Plan, selection: Vec<bool> },  // vista previa editable
+    Review { plan: Plan, selection: Vec<bool> },  // editable preview
     Running { total: usize, done: usize, log: Vec<LogLine> },
     Done { summary: Summary, journal_saved: bool },
     Undoing { total: usize, done: usize, log: Vec<LogLine> },
@@ -167,51 +165,51 @@ enum Screen {
 struct AppState {
     folder: Option<PathBuf>,
     options: Options,
-    previous_run: Option<Journal>,   // Journal::load al elegir carpeta
+    previous_run: Option<Journal>,   // Journal::load when a folder is picked
     screen: Screen,
-    banner: Option<Banner>,          // errores/avisos no bloqueantes
+    banner: Option<Banner>,          // non-blocking errors/warnings
 }
 ```
 
-`update(state, msg) -> Vec<Command>` es una **función pura**: toda la lógica
-de flujo se prueba sin abrir una ventana (§12). `app.rs` solo dibuja `state`
-y convierte clics en `Message`.
+`update(state, msg) -> Vec<Command>` is a **pure function**: all the flow
+logic is tested without opening a window (§12). `app.rs` only draws `state`
+and turns clicks into `Message`s.
 
 ---
 
-## 5. Cambios necesarios en el núcleo
+## 5. Required core changes
 
-Son pequeños y retrocompatibles. Van en la rama de la GUI, con sus tests, y
-la CLI los aprovecha donde tenga sentido.
+They're small and backward compatible. They go on the GUI branch with their
+tests, and the CLI benefits where it makes sense.
 
-### 5.1 Progreso: no requiere cambios
+### 5.1 Progress: no changes needed
 
-**Invariante** que hay que documentar y fijar con un test: cada `PlannedMove`
-produce exactamente un evento terminal (`Moved`, `SourceMissing` o `Failed`),
-y lo mismo cada `JournalMove` en `undo`. La GUI calcula
-`done / plan.moves.len()` contando esos eventos, sin un `Event::Progress`.
+**Invariant** to document and lock in with a test: every `PlannedMove`
+produces exactly one terminal event (`Moved`, `SourceMissing` or `Failed`),
+and so does every `JournalMove` in `undo`. The GUI computes
+`done / plan.moves.len()` by counting those events, with no `Event::Progress`.
 
-### 5.2 Cancelación cooperativa (necesario)
+### 5.2 Cooperative cancellation (needed)
 
 ```rust
 pub fn execute_cancellable(
     plan: &Plan,
     on_event: &mut dyn FnMut(Event),
     cancel: &AtomicBool,
-) -> Summary;            // Summary gana `cancelled: bool`
+) -> Summary;            // Summary gains `cancelled: bool`
 ```
 
-- **Se comprueba `cancel` entre archivos**, nunca a mitad de un movimiento:
-  un archivo está o no está movido, nunca a medias.
-- **`execute` pasa a delegar** en `execute_cancellable` con un `AtomicBool`
-  a `false`, así que la API actual no cambia.
-- **El journal registra lo que sí se movió:** "Deshacer" funciona también
-  tras una cancelación. Hay que probarlo con un test.
-- Lo mismo para `undo` (`undo_cancellable`).
+- **`cancel` is checked between files**, never in the middle of a move: a
+  file is either moved or not, never half-moved.
+- **`execute` delegates** to `execute_cancellable` with an `AtomicBool` set
+  to `false`, so the current API doesn't change.
+- **The journal records what did move:** "Undo" also works after a
+  cancellation. This needs a test.
+- Same for `undo` (`undo_cancellable`).
 
-### 5.3 Ejecutar solo lo seleccionado: no requiere cambios
+### 5.3 Running only the selection: no changes needed
 
-`Plan::moves` es público. La GUI construye un `Plan` filtrado:
+`Plan::moves` is public. The GUI builds a filtered `Plan`:
 
 ```rust
 let selected = Plan {
@@ -221,312 +219,310 @@ let selected = Plan {
 };
 ```
 
-Requiere `#[derive(Clone)]` en `PlannedMove`, un cambio trivial.
+This needs `#[derive(Clone)]` on `PlannedMove`, a trivial change.
 
-### 5.4 Datos para la tabla (recomendado)
+### 5.4 Data for the table (recommended)
 
-- **`PlannedMove::date: DateTime<Local>`**: la fecha usada para clasificar,
-  para mostrarla en la tabla sin volver a leer metadatos.
-- **`PlannedMove::size: u64`**: el tamaño, para el total "1,2 GB en 340
-  archivos".
-- **Opcional: `Plan::predicted_conflicts()`.** Marca los archivos cuyo
-  nombre ya existe en el destino, para mostrar "se renombrará" antes de
-  ejecutar. Es solo informativo: el ejecutor sigue resolviendo los conflictos
-  reales.
+- **`PlannedMove::date: DateTime<Local>`**: the date used for grouping, so
+  the table can show it without reading metadata again.
+- **`PlannedMove::size: u64`**: the size, for totals like "1.2 GB in 340
+  files".
+- **Optional: `Plan::predicted_conflicts()`.** Flags files whose name already
+  exists at the destination, to show "will be renamed" before running. It's
+  informational only: the executor still resolves the real conflicts.
 
-### 5.5 Mensajes de error legibles
+### 5.5 Readable error messages
 
-Hay que implementar `Display` para `Failure` y `ScanWarning` en el núcleo
-(hoy el texto vive en `cli/render.rs`). Así la GUI y la CLI comparten la
-redacción base, y la CLI solo añade iconos y colores.
+Implement `Display` for `Failure` and `ScanWarning` in the core (today the
+text lives in `cli/render.rs`). The GUI and the CLI then share the base
+wording, and the CLI only adds icons and colors.
 
 ---
 
-## 6. Flujo y pantallas
+## 6. Flow and screens
 
 ```text
- ┌─────────────┐  carpeta   ┌──────────┐  plan   ┌──────────┐  Organizar  ┌─────────┐  fin  ┌───────────┐
+ ┌─────────────┐  folder    ┌──────────┐  plan   ┌──────────┐  Organize   ┌─────────┐  end  ┌───────────┐
  │ PickFolder  │──────────► │ Scanning │───────► │  Review  │───────────► │ Running │─────► │   Done    │
  └─────────────┘            └──────────┘         └──────────┘             └─────────┘       └───────────┘
-        ▲                         ▲   cambia opción   │  │                     │ Cancelar        │ Deshacer
-        │                         └───────────────────┘  │ "Cambiar carpeta"   ▼                 ▼
-        └────────────────────────────────────────────────┘                   Done (parcial)   Undoing ─► Undone
+        ▲                         ▲  option changed   │  │                     │ Cancel          │ Undo
+        │                         └───────────────────┘  │ "Change folder"     ▼                 ▼
+        └────────────────────────────────────────────────┘                  Done (partial)   Undoing ─► Undone
 ```
 
-### 6.1 Ventana principal (pantalla Review)
+### 6.1 Main window (Review screen)
 
-Ventana mínima de 900×600, redimensionable. El panel de opciones queda
-siempre visible a la izquierda; el contenido cambia según la pantalla.
+Minimum window size 900×600, resizable. The options panel is always visible
+on the left; the content area changes with the screen.
 
 ```text
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │  📂 File Organizer by Date                                                   │
 ├──────────────────────────────────────────────────────────────────────────────┤
-│  Carpeta: [ C:\Users\ana\Descargas                        ] [Cambiar…]       │
-│  ↩️ Esta carpeta se organizó el 2026-10-20 14:03 (312 archivos). [Deshacer]  │
+│  Folder: [ C:\Users\ana\Downloads                          ] [Change…]       │
+│  ↩️ This folder was organized on 2026-10-20 14:03 (312 files).   [Undo]      │
 ├────────────────────────┬─────────────────────────────────────────────────────┤
-│ OPCIONES               │  Vista previa — 340 archivos · 1,2 GB · 14 carpetas │
-│                        │  [🔍 Buscar archivo…      ]  [Todos] [Ninguno]      │
-│ Agrupar por            │ ┌─────────────────────────────────────────────────┐ │
-│  ○ Año      2024       │ │☑ ▼ 📁 2024 · Enero (Y2024-M01)        23 arch.  │ │
-│  ● Mes      2024-M01   │ │   ☑ foto_playa.jpg        15/01/2024   2,1 MB   │ │
-│  ○ Día   2024-M01-D15  │ │   ☑ informe.pdf           20/01/2024   340 KB   │ │
-│                        │ │   ☐ factura.pdf  ⚠ se renombrará      12 KB    │ │
-│ Usar fecha de          │ │☑ ▶ 📁 2024 · Marzo (Y2024-M03)        41 arch.  │ │
-│  ● Modificación        │ │◪ ▶ 📁 2025 · Noviembre (Y2025-M11)     8 arch.  │ │
-│  ○ Creación            │ │                    …                            │ │
+│ OPTIONS                │  Preview — 340 files · 1.2 GB · 14 folders          │
+│                        │  [🔍 Search file…         ]  [All] [None]           │
+│ Group by               │ ┌─────────────────────────────────────────────────┐ │
+│  ○ Year     2024       │ │☑ ▼ 📁 2024 · January (Y2024-M01)      23 files  │ │
+│  ● Month    2024-M01   │ │   ☑ beach_photo.jpg       2024-01-15   2.1 MB   │ │
+│  ○ Day   2024-M01-D15  │ │   ☑ report.pdf            2024-01-20   340 KB   │ │
+│                        │ │   ☐ invoice.pdf  ⚠ will be renamed     12 KB    │ │
+│ Use date               │ │☑ ▶ 📁 2024 · March (Y2024-M03)        41 files  │ │
+│  ● Modified            │ │◪ ▶ 📁 2025 · November (Y2025-M11)      8 files  │ │
+│  ○ Created             │ │                    …                            │ │
 │                        │ └─────────────────────────────────────────────────┘ │
-│ Tipos de archivo       │  ⚠ 2 elementos omitidos (enlaces, sin fecha) [Ver] │
-│  ● Todos               │                                                     │
-│  ○ Solo: [Fotos ▾]     │                                                     │
+│ File types             │  ⚠ 2 items skipped (links, no date)  [Show]        │
+│  ● All                 │                                                     │
+│  ○ Only: [Photos ▾]    │                                                     │
 │    jpg, png, heic …    │                                                     │
 │                        │                                                     │
-│ ☐ Incluir subcarpetas  │       [ Cancelar ]   [ ✔ Organizar 339 archivos ]   │
+│ ☐ Include subfolders   │         [ Cancel ]   [ ✔ Organize 339 files ]       │
 └────────────────────────┴─────────────────────────────────────────────────────┘
 ```
 
-### 6.2 Progreso (Running / Undoing)
+### 6.2 Progress (Running / Undoing)
 
 ```text
-│  Organizando… 128 de 339                                                     │
+│  Organizing… 128 of 339                                                      │
 │  [██████████████░░░░░░░░░░░░░░░░░░░░░░░░]  38 %                              │
-│  ✔ foto_playa.jpg → 2024 · Enero                                             │
-│  ⚠ factura.pdf ya existía → factura_1.pdf                                    │
-│  ✔ informe.pdf → 2024 · Enero                                                │
-│                                                       [ Cancelar ]           │
+│  ✔ beach_photo.jpg → 2024 · January                                          │
+│  ⚠ invoice.pdf already existed → invoice_1.pdf                               │
+│  ✔ report.pdf → 2024 · January                                               │
+│                                                       [ Cancel ]             │
 ```
 
-### 6.3 Resultado (Done)
+### 6.3 Result (Done)
 
 ```text
-│  ✅ Listo: 337 archivos organizados en 14 carpetas.                          │
-│     1 renombrado para no sobrescribir · 0 omitidos · 2 errores [Ver detalles] │
+│  ✅ Done: 337 files organized into 14 folders.                               │
+│     1 renamed to avoid overwriting · 0 skipped · 2 errors  [Show details]    │
 │                                                                              │
-│     [ 📂 Abrir carpeta ]   [ ↩️ Deshacer ]   [ Organizar otra carpeta ]      │
+│     [ 📂 Open folder ]   [ ↩️ Undo ]   [ Organize another folder ]           │
 ```
 
-Si hubo errores, el resumen va en ámbar y "Ver detalles" despliega la lista.
-Cada error muestra el archivo, el motivo en lenguaje llano y una sugerencia:
-"Ciérralo si está abierto en otro programa y pulsa Reintentar".
+If there were errors, the summary is shown in amber and "Show details"
+expands the list. Each error shows the file, the reason in plain language and
+a suggestion: "Close it if it's open in another program and press Retry".
 
 ---
 
-## 7. Detalle de componentes
+## 7. Component details
 
-### 7.1 Selección de carpeta
+### 7.1 Folder picker
 
-- Hay tres formas de elegirla:
-  - el botón "Elegir carpeta…", con el diálogo nativo de `rfd`;
-  - **arrastrar y soltar** una carpeta sobre la ventana (`egui` expone
+- There are three ways to pick it:
+  - the "Choose folder…" button, with `rfd`'s native dialog;
+  - **dragging and dropping** a folder onto the window (`egui` exposes
     `dropped_files`);
-  - pegar o escribir la ruta, validada al pulsar Enter.
-- La pantalla inicial (PickFolder) es una gran zona de soltar con el texto
-  "Arrastra aquí una carpeta o pulsa Elegir carpeta".
-- **Al elegir carpeta:**
-  - `Journal::load` muestra, si existe, el aviso "↩️ Esta carpeta se organizó
-    el … [Deshacer]";
-  - se lanza `Scan` automáticamente, sin un botón "Analizar".
-- **Protección:** antes de escanear la raíz de una unidad (`C:\`, `/`) o la
-  carpeta de usuario completa, se pide una confirmación adicional: "Esta
-  carpeta contiene muchos archivos del sistema…".
+  - pasting or typing the path, validated on Enter.
+- The initial screen (PickFolder) is a large drop zone reading "Drop a folder
+  here or press Choose folder".
+- **When a folder is picked:**
+  - `Journal::load` shows, if there is one, the notice "↩️ This folder was
+    organized on … [Undo]";
+  - a `Scan` starts automatically, with no "Analyze" button.
+- **Safety:** before scanning the root of a drive (`C:\`, `/`) or the whole
+  user folder, ask for an extra confirmation: "This folder contains many
+  system files…".
 
-### 7.2 Panel de opciones
+### 7.2 Options panel
 
-Cada control se corresponde exactamente con un campo de `Options`:
+Each control maps exactly to an `Options` field:
 
-| Control | Campo | Detalle de UX |
-|---------|-------|---------------|
-| Agrupar por: Año / Mes / Día | `granularity` | Cada opción muestra un ejemplo vivo con la fecha de hoy |
-| Usar fecha de: Modificación / Creación | `date_source` | Tooltip: "La de creación puede no existir en algunos discos; esos archivos se omitirán" |
-| Tipos de archivo: Todos / Solo… | `extensions` | Grupos predefinidos (Fotos, Vídeos, Documentos, Música, Comprimidos) más un campo libre de extensiones separadas por comas. Los grupos son datos en `text.rs`, no lógica |
-| Incluir subcarpetas | `recursive` | Texto de ayuda: "Los archivos de las subcarpetas se moverán a las carpetas por fecha de esta carpeta. Las carpetas ya organizadas se ignoran" |
+| Control | Field | UX details |
+|---------|-------|------------|
+| Group by: Year / Month / Day | `granularity` | Each option shows a live example with today's date |
+| Use date: Modified / Created | `date_source` | Tooltip: "The creation date may not exist on some drives; those files will be skipped" |
+| File types: All / Only… | `extensions` | Presets (Photos, Videos, Documents, Music, Archives) plus a free field of comma-separated extensions. Presets are data in `text.rs`, not logic |
+| Include subfolders | `recursive` | Help text: "Files in subfolders will be moved into this folder's date folders. Already-organized folders are skipped" |
 
-- **Los cambios relanzan el escaneo** con un *debounce* de unos 300 ms.
-- **La selección manual del usuario se conserva** al re-escanear siempre que
-  el archivo siga en el plan (se indexa por `source`).
+- **Changes trigger a re-scan**, debounced by about 300 ms.
+- **The user's manual selection is kept** across re-scans as long as the file
+  is still in the plan (indexed by `source`).
 
-### 7.3 Tabla de vista previa
+### 7.3 Preview table
 
-- **Filas virtualizadas** con `egui_extras::TableBuilder`, para que 50 000
-  filas no ralenticen la interfaz.
-- **Agrupada por carpeta destino**, aprovechando que el `Plan` ya viene
-  ordenado por `folder_name`. Los grupos se pueden plegar, son de tres
-  estados (☑ ◪ ☐) y muestran el número de archivos.
-- **El nombre de carpeta se muestra amigable** ("2024 · Enero") con el
-  técnico (`Y2024-M01`) entre paréntesis o en un tooltip.
-- **Columnas:** casilla, archivo (ruta relativa a la base), fecha usada,
-  tamaño y estado ("⚠ se renombrará" si se implementa §5.4).
-- **Búsqueda** por nombre y botones Todos / Ninguno.
-- **El botón principal refleja la selección:** "Organizar 339 archivos". Con
-  0 seleccionados se desactiva.
-- **Los avisos del escaneo (`ScanWarning`) se resumen en una línea** con
-  enlace "Ver", que abre un panel con la lista. Nunca bloquean.
+- **Virtualized rows** with `egui_extras::TableBuilder`, so 50,000 rows don't
+  slow the UI down.
+- **Grouped by destination folder**, taking advantage of the `Plan` being
+  sorted by `folder_name`. Groups are collapsible, tri-state (☑ ◪ ☐) and show
+  the file count.
+- **Folder names are shown in a friendly form** ("2024 · January"), with the
+  technical name (`Y2024-M01`) in parentheses or a tooltip.
+- **Columns:** checkbox, file (path relative to the base), date used, size,
+  and status ("⚠ will be renamed" if §5.4 is implemented).
+- **Search** by name, plus All / None buttons.
+- **The main button reflects the selection:** "Organize 339 files". With 0
+  selected it's disabled.
+- **Scan warnings (`ScanWarning`) are summarized in one line** with a "Show"
+  link that opens a panel with the list. They never block.
 
-### 7.4 Ejecución
+### 7.4 Running
 
-- **Organizar:**
-  - construye el `Plan` filtrado (§5.3);
-  - envía `Command::Execute`, con `JournalRecorder` dentro del worker,
-    exactamente como hace la CLI;
-  - desactiva el panel de opciones durante la ejecución.
-- **El log en vivo** muestra los últimos N eventos con autoscroll; el log
-  completo se puede copiar al portapapeles.
-- **Cancelar** activa el `AtomicBool`. El botón pasa a "Cancelando…" hasta que
-  termina el archivo en curso, y el resultado indica "Cancelado: 128 de 339
-  movidos (se pueden deshacer)".
+- **Organize:**
+  - builds the filtered `Plan` (§5.3);
+  - sends `Command::Execute`, with a `JournalRecorder` inside the worker,
+    exactly like the CLI does;
+  - disables the options panel while running.
+- **The live log** shows the last N events with auto-scroll; the full log can
+  be copied to the clipboard.
+- **Cancel** sets the `AtomicBool`. The button changes to "Cancelling…" until
+  the current file finishes, and the result says "Cancelled: 128 of 339
+  moved (can be undone)".
 
-### 7.5 Deshacer
+### 7.5 Undo
 
-- **Está disponible desde dos sitios:** el resultado recién terminado y el
-  aviso de "ejecución anterior" al abrir una carpeta.
-- **Antes de deshacer**, un diálogo modal muestra "Se devolverán 337 archivos
-  a su ubicación original" y una lista resumida (`journal.moves`).
-- **Tras deshacer:**
-  - si `pending` no está vacío, se informa "3 archivos no se pudieron
-    devolver" y se ofrece "Reintentar";
-  - `Journal::persist` se ocupa del archivo, igual que en la CLI.
+- **Available from two places:** the result of a run that just finished, and
+  the "previous run" notice when opening a folder.
+- **Before undoing**, a modal dialog shows "337 files will be returned to
+  their original location" and a summarized list (`journal.moves`).
+- **After undoing:**
+  - if `pending` isn't empty, report "3 files couldn't be returned" and offer
+    "Retry";
+  - `Journal::persist` takes care of the file, just like in the CLI.
 
-### 7.6 Ventana y sistema
+### 7.6 Window and system
 
-- Al cerrar con una operación en curso: "Hay una operación en curso.
-  ¿Cancelarla y salir?". La cancelación es segura (§5.2).
-- Atajos de teclado:
-  - `Ctrl+O`: elegir carpeta;
-  - `Enter`: acción principal;
-  - `Ctrl+Z`: deshacer, solo en la pantalla de resultado y siempre con la
-    confirmación modal;
-  - `Esc`: cancelar o cerrar el diálogo.
-
----
-
-## 8. Estados, errores y casos límite
-
-| Situación | Comportamiento |
-|-----------|----------------|
-| Carpeta sin archivos que organizar | Ilustración y texto: "No hay archivos sueltos aquí". Si `recursive` está desactivado, se sugiere activarlo |
-| Error al listar la carpeta (permisos) | Banner rojo con la causa y el botón "Elegir otra carpeta" |
-| Carpeta borrada o desmontada entre escaneo y ejecución | Cada archivo produce `SourceMissing`. El resumen lo explica y no cuenta como error |
-| Archivo en uso (Windows) | `Failed` con un mensaje accionable y "Reintentar" para los fallidos (un nuevo `Plan` con solo esos) |
-| Journal corrupto o con rutas inválidas | El aviso "No se puede deshacer: el registro está dañado" ofrece "Ver archivo". Nunca se borra automáticamente |
-| Movimientos sin registrar (rutas no UTF-8) | Aviso persistente en el resultado: "N archivos no podrán deshacerse" |
-| Escaneo muy largo | Spinner con contador de archivos vistos y "Cancelar". Requiere que `scan` admita cancelación; si no, se descarta el resultado por `generation` |
-| Opciones cambiadas durante un escaneo | Se lanza un escaneo nuevo y el plan antiguo se descarta por `generation` |
+- Closing during an operation: "An operation is in progress. Cancel it and
+  quit?". Cancelling is safe (§5.2).
+- Keyboard shortcuts:
+  - `Ctrl+O`: choose folder;
+  - `Enter`: main action;
+  - `Ctrl+Z`: undo, only on the result screen and always with the modal
+    confirmation;
+  - `Esc`: cancel or close the dialog.
 
 ---
 
-## 9. Accesibilidad e idioma
+## 8. States, errors and edge cases
 
-- **Lectores de pantalla:** egui integra AccessKit. Todos los controles
-  necesitan etiquetas reales: nada de iconos sin texto.
-- **El color nunca es el único indicador:** errores, avisos y éxitos llevan
-  icono y texto además del color.
-- **Contraste suficiente** en los temas claro y oscuro (egui los trae ambos);
-  por defecto se sigue el tema del sistema.
-- **Escala de interfaz** ajustable (`Ctrl +` / `Ctrl -`) mediante
-  `pixels_per_point`.
-- **Teclado:** todo el flujo se puede completar sin ratón, con orden de
-  tabulación lógico.
-- **Idioma:**
-  - todas las cadenas viven en `text.rs` desde el primer día;
-  - la primera versión sale en español, como la CLI;
-  - si más adelante hace falta inglés, se migra `text.rs` a `fluent` o
-    `rust-i18n` sin tocar las vistas.
+| Situation | Behavior |
+|-----------|----------|
+| Folder with nothing to organize | Illustration and text: "There are no loose files here". If `recursive` is off, suggest turning it on |
+| Error listing the folder (permissions) | Red banner with the cause and a "Choose another folder" button |
+| Folder deleted or unmounted between scan and run | Every file produces `SourceMissing`. The summary explains it and it doesn't count as an error |
+| File in use (Windows) | `Failed` with an actionable message and "Retry" for the failed ones (a new `Plan` with only those) |
+| Corrupt journal or invalid paths in it | The notice "Can't undo: the record is damaged" offers "Show file". It's never deleted automatically |
+| Moves not recorded (non-UTF-8 paths) | Persistent notice in the result: "N files can't be undone" |
+| Very long scan | Spinner with a count of files seen, and "Cancel". Requires `scan` to support cancellation; otherwise the result is dropped by `generation` |
+| Options changed during a scan | A new scan starts and the old plan is dropped by `generation` |
 
 ---
 
-## 10. Persistencia de preferencias
+## 9. Accessibility and language
 
-Se guardan con `eframe::Storage` (feature `persistence`):
-
-- la última carpeta usada (solo se propone; nunca se escanea al arrancar sin
-  acción del usuario);
-- las últimas `Options`;
-- el tamaño y la posición de la ventana, el tema y la escala.
-
-No se persiste nada sobre los archivos: el journal en cada carpeta sigue
-siendo la única fuente de verdad para deshacer, y es compatible con la CLI.
+- **Screen readers:** egui integrates AccessKit. Every control needs a real
+  label: no icon-only controls.
+- **Color is never the only signal:** errors, warnings and successes carry an
+  icon and text besides color.
+- **Sufficient contrast** in both light and dark themes (egui ships both);
+  follows the system theme by default.
+- **Adjustable UI scale** (`Ctrl +` / `Ctrl -`) via `pixels_per_point`.
+- **Keyboard:** the whole flow can be completed without a mouse, with a
+  logical tab order.
+- **Language:**
+  - every string lives in `text.rs` from day one;
+  - the first version ships in English, like the CLI;
+  - if more languages are needed later, `text.rs` is migrated to `fluent`
+    or `rust-i18n` without touching the views.
 
 ---
 
-## 11. Empaquetado y distribución
+## 10. Persisted preferences
+
+Saved with `eframe::Storage` (`persistence` feature):
+
+- the last folder used (only suggested; never scanned at startup without a
+  user action);
+- the last `Options`;
+- window size and position, theme and scale.
+
+Nothing about the files is persisted: the journal in each folder remains the
+only source of truth for undo, and it's compatible with the CLI.
+
+---
+
+## 11. Packaging and distribution
 
 - **Windows:**
-  - `#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]`, para
-    que no se abra una consola;
-  - icono embebido (por ejemplo, con `winres`);
-  - firma de código, si se distribuye públicamente.
-- **macOS:** un bundle `.app` (por ejemplo, con `cargo-bundle`).
-- **Linux:** AppImage o `.deb`.
-- **Proceso:** `cargo-dist` puede generar instaladores y releases de GitHub
-  para la CLI y la GUI desde el mismo workspace.
-- **La CLI y la GUI se publican por separado.** La CLI no debe arrastrar las
-  dependencias gráficas.
+  - `#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]`, so
+    no console window opens;
+  - embedded icon (e.g. with `winres`);
+  - code signing, if distributed publicly.
+- **macOS:** an `.app` bundle (e.g. with `cargo-bundle`).
+- **Linux:** AppImage or `.deb`.
+- **Pipeline:** `cargo-dist` can generate installers and GitHub releases for
+  both the CLI and the GUI from the same workspace.
+- **The CLI and the GUI ship separately.** The CLI must not pull in the
+  graphics dependencies.
 
 ---
 
-## 12. Estrategia de pruebas
+## 12. Testing strategy
 
-1. **Núcleo:** tests unitarios de los cambios de §5:
-   - cancelación entre archivos;
-   - journal parcial tras cancelar, y que se puede deshacer;
-   - invariante de un evento terminal por movimiento.
-2. **Lógica de la app:** tests de `update(state, msg)` sin ventana:
-   - transiciones válidas;
-   - descarte de planes por `generation`;
-   - conservación de la selección al re-escanear;
-   - "Organizar" desactivado sin selección.
-3. **Interacción:** `egui_kittest` para recorrer el flujo principal (elegir
-   carpeta, desmarcar un grupo, organizar, deshacer) sobre un `tempdir`.
-4. **Manual, antes de cada release**, en Windows, macOS y Linux:
-   - carpeta con 10 000 archivos;
-   - archivo abierto en otro programa;
-   - carpeta en una unidad de red;
-   - cancelar a mitad;
-   - cerrar la ventana durante una operación.
-
----
-
-## 13. Plan de trabajo por hitos
-
-Rama: `feature/gui`, con un PR por hito para mantener las revisiones
-pequeñas.
-
-| Hito | Contenido | Resultado verificable |
-|------|-----------|----------------------|
-| G0 | Workspace `crates/{core,cli,gui}`, CI ampliado | La CLI se comporta igual: el script de comparación de salida da diferencias nulas |
-| G1 | Núcleo: cancelación, `Clone` y `date`/`size` en `PlannedMove`, `Display` de errores | Tests nuevos en verde. La CLI usa `Display` sin cambiar su salida |
-| G2 | Esqueleto de la GUI: `AppState` + `update` + worker + selección de carpeta + escaneo | Elegir carpeta muestra el número de archivos sin congelar la UI |
-| G3 | Panel de opciones y tabla de vista previa con selección | Cambiar opciones re-escanea; desmarcar archivos actualiza el botón |
-| G4 | Ejecución con progreso, log en vivo, cancelación y resultado | Organizar y cancelar funcionan, y el journal es compatible con `--undo` de la CLI |
-| G5 | Deshacer (resultado + aviso al abrir carpeta), reintentar fallidos | Ida y vuelta completa desde la GUI |
-| G6 | Accesibilidad, atajos, persistencia, protecciones (raíz de unidad), pulido de textos | Checklist de §9 y §14 completo |
-| G7 | Empaquetado por plataforma y documentación (README con capturas) | Instalables descargables desde una release |
+1. **Core:** unit tests for the §5 changes:
+   - cancellation between files;
+   - partial journal after cancelling, and that it can be undone;
+   - the one-terminal-event-per-move invariant.
+2. **App logic:** tests of `update(state, msg)` with no window:
+   - valid transitions;
+   - plans dropped by `generation`;
+   - selection kept across re-scans;
+   - "Organize" disabled with no selection.
+3. **Interaction:** `egui_kittest` to walk through the main flow (pick a
+   folder, uncheck a group, organize, undo) on a `tempdir`.
+4. **Manual, before each release**, on Windows, macOS and Linux:
+   - a folder with 10,000 files;
+   - a file open in another program;
+   - a folder on a network drive;
+   - cancelling halfway;
+   - closing the window during an operation.
 
 ---
 
-## 14. Criterios de aceptación
+## 13. Milestones
 
-- [ ] Un usuario nuevo organiza una carpeta y la deshace **sin ayuda** en
-      menos de un minuto (prueba con 3 personas).
-- [ ] Nada se mueve sin vista previa y clic explícito (P1).
-- [ ] La UI no se congela con 50 000 archivos; el escaneo y la ejecución
-      muestran progreso.
-- [ ] Cancelar deja un estado coherente y deshacible.
-- [ ] Un journal creado por la GUI se deshace con la CLI, y viceversa.
-- [ ] Todo el flujo se puede completar solo con teclado; los controles tienen
-      etiquetas para lectores de pantalla.
-- [ ] La CLI no cambia de comportamiento ni de dependencias.
-- [ ] CI en verde en Windows, macOS y Linux.
+Branch: `feature/gui`, with one PR per milestone to keep reviews small.
+
+| Milestone | Content | Verifiable outcome |
+|-----------|---------|--------------------|
+| G0 | Workspace `crates/{core,cli,gui}`, extended CI | The CLI behaves the same: the output comparison script shows no differences |
+| G1 | Core: cancellation, `Clone` and `date`/`size` on `PlannedMove`, `Display` for errors | New tests pass. The CLI uses `Display` without changing its output |
+| G2 | GUI skeleton: `AppState` + `update` + worker + folder picker + scan | Picking a folder shows the file count without freezing the UI |
+| G3 | Options panel and preview table with selection | Changing options re-scans; unchecking files updates the button |
+| G4 | Running with progress, live log, cancellation and result | Organizing and cancelling work, and the journal is compatible with the CLI's `--undo` |
+| G5 | Undo (from the result and the notice when opening a folder), retry failed moves | Full round trip from the GUI |
+| G6 | Accessibility, shortcuts, persistence, safety checks (drive root), copy polish | §9 and §14 checklists complete |
+| G7 | Per-platform packaging and documentation (README with screenshots) | Installers downloadable from a release |
 
 ---
 
-## 15. Riesgos y decisiones abiertas
+## 14. Acceptance criteria
 
-| Tema | Riesgo / pregunta | Propuesta |
-|------|-------------------|-----------|
-| MSRV de eframe | Más alta que la del núcleo | `rust-version` propio en `organizer-gui` |
-| Aspecto no nativo de egui | Puede parecer "poco pulido" | Tema cuidado, iconos coherentes y espaciado generoso. Si con el tiempo pesa, la arquitectura (núcleo sin UI) permite migrar a Tauri |
-| Escaneos enormes | `scan` no se puede cancelar hoy | Añadir `cancel` también a `scan` en G1 si las pruebas de G2 lo justifican |
-| Journal oculto en Windows | El punto no oculta el archivo | Opcional: atributo `HIDDEN` al crearlo (en Windows hay que manejar bien el reemplazo de un archivo oculto) |
-| Idioma | ¿Hace falta inglés en la primera versión? | No; `text.rs` lo deja preparado |
-| Integración con el SO | "Organizar con…" en el menú contextual del explorador | Fuera de alcance; posible v2 |
+- [ ] A new user organizes a folder and undoes it **without help** in under a
+      minute (tested with 3 people).
+- [ ] Nothing moves without a preview and an explicit click (P1).
+- [ ] The UI doesn't freeze with 50,000 files; scanning and running show
+      progress.
+- [ ] Cancelling leaves a consistent, undoable state.
+- [ ] A journal created by the GUI can be undone with the CLI, and vice
+      versa.
+- [ ] The whole flow can be completed with the keyboard alone; controls have
+      labels for screen readers.
+- [ ] The CLI's behavior and dependencies don't change.
+- [ ] CI passes on Windows, macOS and Linux.
+
+---
+
+## 15. Risks and open decisions
+
+| Topic | Risk / question | Proposal |
+|-------|-----------------|----------|
+| eframe MSRV | Higher than the core's | Separate `rust-version` in `organizer-gui` |
+| egui's non-native look | May feel "unpolished" | A careful theme, consistent icons and generous spacing. If it becomes a problem, the UI-free core makes moving to Tauri possible |
+| Huge scans | `scan` can't be cancelled today | Add `cancel` to `scan` in G1 if G2's testing justifies it |
+| Hidden journal on Windows | The leading dot doesn't hide the file | Optional: set the `HIDDEN` attribute on creation (replacing a hidden file on Windows needs care) |
+| Languages | Is anything besides English needed in the first version? | No; `text.rs` keeps the door open |
+| OS integration | "Organize with…" in the file explorer's context menu | Out of scope; possible v2 |

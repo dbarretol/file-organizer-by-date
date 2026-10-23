@@ -1,93 +1,95 @@
-# Plan de refactor: núcleo reutilizable, extensibilidad y GUI futura
+# Refactor plan: reusable core, extensibility and a future GUI
 
-> Rama de trabajo: `refactor/core-lib`
-> Punto de partida: v0.5.0 (`ff55cb1`). Un único `src/main.rs` de 687 líneas,
-> `clippy` limpio y 6 tests en verde.
+> Working branch: `refactor/core-lib`
+> Starting point: v0.5.0 (`ff55cb1`). A single 687-line `src/main.rs`,
+> clean `clippy` and 6 passing tests.
 
-## Objetivo
+## Goals
 
-1. **Mantenibilidad y claridad:** funciones cortas, tipos con nombre,
-   responsabilidades separadas.
-2. **Añadir features con poca fricción:** cada feature del roadmap toca un único
-   punto de extensión, no tres funciones a la vez.
-3. **Preparar una GUI:** el núcleo no imprime ni lee stdin. Devuelve datos
-   (`Plan`, `Summary`) y emite eventos (`Event`) que cualquier frontend puede
-   consumir.
+1. **Maintainability and clarity:** short functions, named types, separate
+   responsibilities.
+2. **Low-friction features:** each roadmap feature touches a single extension
+   point, not three functions at once.
+3. **Ready for a GUI:** the core never prints or reads stdin. It returns data
+   (`Plan`, `Summary`) and emits events (`Event`) that any frontend can
+   consume.
 
-**Regla transversal:** en las fases 1 a 3 el comportamiento visible de la CLI
-no cambia (mismos mensajes, mismos códigos de salida). Los tests existentes
-deben seguir pasando en cada fase.
-
----
-
-## Diagnóstico (resumen de la auditoría)
-
-| # | Problema | Ubicación (v0.5.0) | Impacto |
-|---|----------|--------------------|---------|
-| D1 | El núcleo imprime por consola (`println!`/`eprintln!`) | `collect_files`, `execute_moves`, `organize_directory` | Una GUI no puede reutilizar la lógica |
-| D2 | Todo en un archivo y sin crate `lib` | `src/main.rs` | No hay tests de integración ni reutilización |
-| D3 | `execute_moves` ocupa unas 130 líneas, con bucles anidados y `continue 'files` | `src/main.rs:184-312` | Difícil de leer y de modificar |
-| D4 | Retorno `(u32, u32, u32)` | `execute_moves` | Hay que recordar el orden |
-| D5 | `process::exit` repartido por `main` | `main` | Códigos de salida sin una fuente única |
-| D6 | Parseo de argumentos manual | `main` | Cada flag nuevo añade más `if/else` |
-| D7 | Números mágicos (5 reintentos, 10 000 sufijos) | `execute_moves`, `resolve_conflict` | Poco descubribles |
-| D8 | `current_exe()` + `canonicalize()` por cada archivo | `is_self_executable` | Llamadas al sistema innecesarias |
-| D9 | **Bug:** los nombres no UTF-8 se corrompen al renombrar por conflicto | `resolve_conflict` (`to_string_lossy`) | `\xff.txt` pasa a llamarse `�_1.txt` |
-| D10 | `stdout().flush().unwrap()` entra en pánico con un pipe roto | `ask_for_directory`, `confirm` | Crash en scripts |
-| D11 | Los tests usan directorios temporales con nombre fijo | `tests::temp_dir` | Dos ejecuciones en paralelo chocan; no se limpia si falla |
-| D12 | Falta `LICENSE` aunque el README lo enlaza; `Cargo.lock` ignorado en un binario | raíz, `.gitignore` | Higiene y builds reproducibles |
-| D13 | `Cargo.toml` sin `license`/`readme`/`keywords`/`categories` | `Cargo.toml` | Bloquea publicar en crates.io |
-| D14 | Sin CI | — | El código depende del comportamiento de cada plataforma y no se prueba en ellas |
+**Cross-cutting rule:** in phases 1 to 3 the CLI's visible behavior doesn't
+change (same messages, same exit codes). The existing tests must keep passing
+in every phase.
 
 ---
 
-## Fase 1: Higiene del repositorio
+## Diagnosis (audit summary)
 
-**Resuelve:** D12, D13, D14
+| # | Problem | Location (v0.5.0) | Impact |
+|---|---------|-------------------|--------|
+| D1 | The core prints to the console (`println!`/`eprintln!`) | `collect_files`, `execute_moves`, `organize_directory` | A GUI can't reuse the logic |
+| D2 | Everything in one file, no `lib` crate | `src/main.rs` | No integration tests, no reuse |
+| D3 | `execute_moves` is ~130 lines with nested loops and `continue 'files` | `src/main.rs:184-312` | Hard to read and change |
+| D4 | `(u32, u32, u32)` return value | `execute_moves` | You have to remember the order |
+| D5 | `process::exit` scattered across `main` | `main` | No single source for exit codes |
+| D6 | Hand-written argument parsing | `main` | Every new flag adds more `if/else` |
+| D7 | Magic numbers (5 retries, 10,000 suffixes) | `execute_moves`, `resolve_conflict` | Hard to discover |
+| D8 | `current_exe()` + `canonicalize()` for every file | `is_self_executable` | Needless system calls |
+| D9 | **Bug:** non-UTF-8 names get corrupted when renamed on conflict | `resolve_conflict` (`to_string_lossy`) | `\xff.txt` becomes `�_1.txt` |
+| D10 | `stdout().flush().unwrap()` panics on a broken pipe | `ask_for_directory`, `confirm` | Crash in scripts |
+| D11 | Tests use temporary folders with fixed names | `tests::temp_dir` | Parallel runs clash; nothing is cleaned up on failure |
+| D12 | `LICENSE` missing although the README links it; `Cargo.lock` ignored in a binary | root, `.gitignore` | Hygiene and reproducible builds |
+| D13 | `Cargo.toml` without `license`/`readme`/`keywords`/`categories` | `Cargo.toml` | Blocks publishing to crates.io |
+| D14 | No CI | — | The code depends on per-platform behavior and isn't tested on each platform |
 
-- [x] Añadir `LICENSE` (MIT).
-- [x] Quitar `Cargo.lock` del `.gitignore` y versionarlo (es un binario).
-- [x] Metadatos en `Cargo.toml`: `license`, `readme`, `keywords`, `categories`.
-- [ ] `repository`, `homepage` y la URL de clonado del README. **Pendiente
-      hasta que exista un remoto** (hoy es un placeholder).
-- [x] CI en `.github/workflows/ci.yml` con matriz Windows, Linux y macOS:
+---
+
+## Phase 1: Repository hygiene
+
+**Fixes:** D12, D13, D14
+
+- [x] Add `LICENSE` (MIT).
+- [x] Remove `Cargo.lock` from `.gitignore` and commit it (binary crate).
+- [x] `Cargo.toml` metadata: `license`, `readme`, `keywords`, `categories`.
+- [x] `repository`, `homepage` and the README clone URL, once the GitHub
+      repository existed.
+- [x] CI in `.github/workflows/ci.yml` with a Windows, Linux and macOS
+      matrix:
   - `cargo fmt --check`
   - `cargo clippy --all-targets -- -D warnings`
   - `cargo test`
-  - build con la MSRV declarada (1.82) en Linux y Windows
+  - a build with the declared MSRV (1.82) on Linux and Windows
 
-**Criterio de aceptación:** el CI pasa en las tres plataformas.
+**Acceptance criterion:** CI passes on all three platforms.
 
-> **MSRV: 1.82.** Con el `Cargo.lock` actual, `chrono` → `iana-time-zone` →
-> `windows-core` 0.62 exige Rust 1.82 en Windows. Se optó por subir
-> `rust-version` en lugar de fijar dependencias antiguas en el lock (frágil
-> ante `cargo update`). El job de MSRV corre en Linux y en Windows.
+> **MSRV: 1.82.** With the current `Cargo.lock`, `chrono` → `iana-time-zone`
+> → `windows-core` 0.62 requires Rust 1.82 on Windows. We chose to raise
+> `rust-version` rather than pin old dependencies in the lock (fragile under
+> `cargo update`). `.cargo/config.toml` makes Cargo prefer MSRV-compatible
+> versions, and the MSRV job runs on Linux and Windows.
 
 ---
 
-## Fase 2: Separar `lib` y `bin`, con un núcleo basado en eventos
+## Phase 2: Split `lib` and `bin`, with an event-based core
 
-**Resuelve:** D1, D2, D11
+**Fixes:** D1, D2, D11
 
-### Estructura
+### Structure
 
 ```text
 src/
-├── lib.rs          # API pública del núcleo (re-exports)
-├── grouping.rs     # fecha → nombre de carpeta (folder_for)
+├── lib.rs          # Public core API (re-exports)
+├── grouping.rs     # date → folder name (folder_for)
 ├── plan.rs         # scan() → Plan { moves, warnings }
 ├── executor.rs     # execute(plan, on_event) → Summary
-├── event.rs        # Event, Failure: lo que el núcleo comunica
-├── fs_ops.rs       # move_file, copy_then_remove, resolve_conflict (seguridad FS)
-├── main.rs         # punto de entrada de la CLI → ExitCode
+├── event.rs        # Event, Failure: what the core reports
+├── fs_ops.rs       # move_file, copy_then_remove, resolve_conflict (FS safety)
+├── main.rs         # CLI entry point → ExitCode
 └── cli/
-    ├── mod.rs      # flujo organize_directory + bucle interactivo
-    ├── args.rs     # parseo de argumentos → Command
+    ├── mod.rs      # organize_directory flow + interactive loop
+    ├── args.rs     # argument parsing
     ├── prompt.rs   # confirm, ask_for_directory (stdin)
-    └── render.rs   # banner, preview, Event → texto, resumen
+    └── render.rs   # banner, preview, Event → text, summary
 ```
 
-### API del núcleo
+### Core API
 
 ```rust
 pub fn scan(dir: &Path, options: &Options) -> io::Result<Plan>;
@@ -95,11 +97,12 @@ pub fn execute(plan: &Plan, on_event: &mut dyn FnMut(Event)) -> Summary;
 
 pub struct Plan        { pub base: PathBuf, pub moves: Vec<PlannedMove>, pub warnings: Vec<ScanWarning> }
 pub struct PlannedMove { pub source: PathBuf, pub folder_name: String }
-pub enum   ScanWarning { UnreadableEntry(io::Error), Symlink(PathBuf), NoModifiedDate { path, error } }
+pub enum   ScanWarning { UnreadableEntry(io::Error), UnreadableDir { path, error }, Symlink(PathBuf), NoDate { path, source, error } }
 
 pub enum Event {
     FolderCreated { folder_name },
-    Conflict { original, renamed_to, late },   // late = apareció tras la comprobación (TOCTOU)
+    FolderRemoved { folder_name },             // undo only
+    Conflict { original, renamed_to, late },   // late = appeared after the check (TOCTOU)
     Moved { from, to },
     SourceMissing { path },
     Failed { source, failure: Failure },
@@ -107,178 +110,186 @@ pub enum Event {
 pub struct Summary { pub moved: u32, pub skipped: u32, pub errors: u32 }
 ```
 
-### Decisiones
+### Decisions
 
-- **El `Plan` ya viene ordenado** por carpeta destino y nombre. La GUI lo
-  muestra tal cual y la CLI agrupa la vista previa sin reordenar.
-- **Los avisos del escaneo son datos (`ScanWarning`), no texto.** La CLI los
-  imprime en el mismo canal que antes (los symlinks por stdout y el resto por
-  stderr). La GUI puede listarlos en un panel.
-- **Los eventos son *owned*** (`PathBuf`/`OsString`). Así se pueden enviar
-  por un canal (`mpsc`) desde un hilo de trabajo hasta el hilo de la GUI. El
-  coste de clonar es despreciable frente al de las operaciones de disco.
-- **`fs_ops` no se exporta.** Es la parte delicada (no sobrescribir, TOCTOU,
-  conservar el mtime) y queda encapsulada con sus tests.
-- **Tests con `tempfile::TempDir`** (dev-dependency): directorios únicos que
-  se limpian solos.
+- **The `Plan` comes sorted** by destination folder and name. A GUI shows it
+  as is, and the CLI groups the preview without re-sorting.
+- **Scan warnings are data (`ScanWarning`), not text.** The CLI prints them
+  on the same stream as before (symlinks to stdout, the rest to stderr). A GUI
+  can list them in a panel.
+- **Events are *owned*** (`PathBuf`/`OsString`), so they can be sent through
+  a channel (`mpsc`) from a worker thread to the GUI thread. The cost of
+  cloning is negligible next to disk operations.
+- **`fs_ops` is not exported.** It's the delicate part (never overwrite,
+  TOCTOU, keep the mtime) and stays encapsulated with its tests.
+- **Tests use `tempfile::TempDir`** (dev-dependency): unique folders that
+  clean themselves up.
 
-**Criterio de aceptación:** `grep println src/{lib,plan,executor,event,fs_ops,grouping}.rs`
-no devuelve nada, la salida de la CLI es idéntica y los tests pasan.
+**Acceptance criterion:** `grep println src/{lib,plan,executor,event,fs_ops,grouping}.rs`
+returns nothing, the CLI output is identical and the tests pass.
 
 ---
 
-## Fase 3: Claridad del ejecutor y bugs menores
+## Phase 3: Executor clarity and minor bugs
 
-**Resuelve:** D3, D4, D5, D7, D8, D9, D10
+**Fixes:** D3, D4, D5, D7, D8, D9, D10
 
-- [x] Trocear `execute_moves` en:
-  - `ensure_dest_dir(base, folder) -> Result<PathBuf, Failure>` (comprueba
-    que no exista como archivo y crea la carpeta, emitiendo `FolderCreated`).
+- [x] Split `execute_moves` into:
+  - `ensure_dest_dir(base, folder) -> Result<PathBuf, Failure>` (checks it
+    doesn't exist as a file and creates the folder, emitting
+    `FolderCreated`);
   - `move_with_retries(source, dest_dir, file_name) -> Result<PathBuf, Failure>`
-    (pre-check de conflicto, bucle de reintentos ante TOCTOU).
-  - El bucle de `execute` queda en unas 20 líneas, sin etiquetas.
-- [x] `Summary` con campos con nombre y `Summary::is_success()`.
-- [x] `fn main() -> ExitCode` con constantes `EXIT_OK`/`EXIT_FAILURE`/`EXIT_USAGE`
-      en un único sitio.
-- [x] Constantes con nombre: `MAX_MOVE_ATTEMPTS`, `MAX_CONFLICT_SUFFIX`,
+    (conflict pre-check, retry loop on TOCTOU);
+  - the `execute` loop is now about 20 lines, with no labels.
+- [x] `Summary` with named fields and `Summary::is_success()`.
+- [x] `fn main() -> ExitCode` with `EXIT_OK`/`EXIT_FAILURE`/`EXIT_USAGE`
+      constants in a single place.
+- [x] Named constants: `MAX_MOVE_ATTEMPTS`, `MAX_CONFLICT_SUFFIX`,
       `MAX_PREVIEW_PER_GROUP`.
-- [x] Calcular la ruta del propio ejecutable una sola vez por escaneo, y
-      canonicalizar un archivo solo si su nombre coincide con el del ejecutable.
-- [x] **Bug D9:** `resolve_conflict` construye el nombre con `OsString`, sin
-      pasar por `to_string_lossy`. Test con un nombre no UTF-8 (`cfg(unix)`)
-      y con un nombre no UTF-16 válido (`cfg(windows)`).
-- [x] **Bug D10:** `let _ = io::stdout().flush();` en lugar de `unwrap()`.
+- [x] Resolve the executable's own path once per scan, and canonicalize a
+      file only if its name matches the executable's.
+- [x] **Bug D9:** `resolve_conflict` builds the name with `OsString`, never
+      through `to_string_lossy`. Tested with a non-UTF-8 name (`cfg(unix)`)
+      and an invalid UTF-16 name (`cfg(windows)`).
+- [x] **Bug D10:** `let _ = io::stdout().flush();` instead of `unwrap()`.
 
 ---
 
-## Fase 4: `clap` + `Options` + `--by-day` (primera feature)
+## Phase 4: `clap` + `Options` + `--by-day` (first feature)
 
-**Resuelve:** D6. Valida que la arquitectura admite features sin fricción.
+**Fixes:** D6. Proves the architecture accepts features without friction.
 
-- [x] `clap` con `derive` (`src/cli/args.rs`). Se mantienen `RUTA`, `--yes/-y`,
-      `--help/-h` (y se añade `-V/--version`) y los códigos de salida: clap
-      usa el 2 para errores de uso y el 0 para la ayuda.
-  - La ayuda está en español (`help_template`, `override_usage` y
-    encabezados propios). **Limitación:** los mensajes de error de clap
-    ("error: unexpected argument…") siguen en inglés; clap no ofrece i18n.
-  - Se conserva la pista de "escriba la ruta entre comillas" cuando sobra un
-    argumento posicional.
-- [x] `pub struct Options { granularity }` (`src/options.rs`), que se pasa a
-      `scan`. `Default` conserva el comportamiento anterior.
-- [x] `pub enum Granularity { Year, Month, Day }`, con `Month` por defecto, y
+- [x] `clap` with `derive` (`src/cli/args.rs`). `PATH`, `--yes/-y` and
+      `--help/-h` are kept (and `-V/--version` is added), as are the exit
+      codes: clap uses 2 for usage errors and 0 for help.
+  - The "wrap the path in quotes" hint is kept when there is an extra
+    positional argument.
+- [x] `pub struct Options { granularity }` (`src/options.rs`), passed to
+      `scan`. `Default` keeps the previous behavior.
+- [x] `pub enum Granularity { Year, Month, Day }`, defaulting to `Month`, and
       `folder_for(dt, granularity)`:
   - `Year`: `Y2024`
   - `Month`: `Y2024-M01`
   - `Day`: `Y2024-M01-D15`
-- [x] `--group-by <year|month|day>` y su atajo `--by-day` (en conflicto entre
-      sí). La CLI tiene su propio `GroupBy` (`ValueEnum`), de modo que el
-      núcleo no depende de clap.
-- [x] Tests: `folder_for` en cada granularidad, `scan` con `Day` y el parseo
-      de argumentos (`--yes` sin ruta, dos rutas, conflicto entre
-      `--by-day` y `--group-by`).
+- [x] `--group-by <year|month|day>` and its `--by-day` shortcut (mutually
+      exclusive). The CLI has its own `GroupBy` (`ValueEnum`), so the core
+      doesn't depend on clap.
+- [x] Tests: `folder_for` for each granularity, `scan` with `Day`, and
+      argument parsing (`--yes` without a path, two paths, `--by-day` vs
+      `--group-by` conflict).
 
-## Fase 5: Más features sobre `Options`
+## Phase 5: More features on top of `Options`
 
-Cada una tocó un único punto del núcleo (`scan` y `Options`) más su flag en
-`src/cli/args.rs`; `executor`, `fs_ops` y `event` no cambiaron.
+Each one touched a single point of the core (`scan` and `Options`) plus its
+flag in `src/cli/args.rs`; `executor`, `fs_ops` and `event` didn't change.
 
 - [x] **`--extensions jpg,png` / `-e`**: `Options::extensions: Option<ExtensionFilter>`
-      (`src/filter.rs`). Normaliza `.JPG` → `jpg`, sin distinguir mayúsculas;
-      los archivos sin extensión nunca coinciden. Los archivos filtrados se
-      omiten en silencio.
-- [x] **`--recursive` / `-r`**: `Options::recursive`. `scan` pasa a ser un
-      recorrido (`Scanner::visit`) que:
-  - no sigue enlaces simbólicos ni junctions (sin ciclos), y avisa de ellos;
-  - salta cualquier carpeta con forma de destino (`Y####`, `Y####-M##`,
-    `Y####-M##-D##`, `grouping::is_date_folder`) a cualquier profundidad, de
-    modo que repetir la ejecución no cambia nada;
-  - mueve a las carpetas por fecha **de la carpeta base** (aplana) y deja las
-    subcarpetas vaciadas en su sitio;
-  - registra como aviso (`ScanWarning::UnreadableDir`) las subcarpetas que no
-    se pueden listar; solo un fallo al listar la carpeta base aborta.
-  - La vista previa muestra rutas relativas a la base, para distinguir
-    homónimos. Sin `-r` sigue mostrando solo el nombre.
-- [x] **`--date modified|created`**: `Options::date_source: DateSource`.
-      Si la plataforma o el sistema de archivos no ofrece fecha de creación,
-      el archivo se omite con `ScanWarning::NoDate` (antes `NoModifiedDate`).
-  - Nota: el fallback copiar+borrar (entre volúmenes) conserva el mtime pero
-    no la fecha de creación. Es irrelevante dentro de una misma carpeta base.
-- [ ] **EXIF** (fecha de captura de fotos): sería un `DateSource::Exif` más,
-      con la dependencia `kamadak-exif`. Queda pendiente hasta que haga falta.
-- [x] **Log a archivo**: se hizo en la fase 6, porque comparte formato y
-      mecanismo con el journal.
+      (`src/filter.rs`). Normalizes `.JPG` → `jpg`, case-insensitive; files
+      without an extension never match. Filtered-out files are skipped
+      silently.
+- [x] **`--recursive` / `-r`**: `Options::recursive`. `scan` became a walk
+      (`Scanner::visit`) that:
+  - doesn't follow symbolic links or junctions (no cycles), and warns about
+    them;
+  - skips any folder shaped like a destination (`Y####`, `Y####-M##`,
+    `Y####-M##-D##`, `grouping::is_date_folder`) at any depth, so running it
+    again changes nothing;
+  - moves files into the date folders **of the base folder** (flattening) and
+    leaves emptied subfolders in place;
+  - records subfolders that can't be listed as a warning
+    (`ScanWarning::UnreadableDir`); only failing to list the base folder
+    aborts.
+  - The preview shows paths relative to the base, to tell same-named files
+    apart. Without `-r` it still shows just the name.
+- [x] **`--date modified|created`**: `Options::date_source: DateSource`. If
+      the platform or filesystem has no creation date, the file is skipped
+      with `ScanWarning::NoDate` (formerly `NoModifiedDate`).
+  - Note: the copy+delete fallback (across volumes) keeps the mtime but not
+    the creation date. Irrelevant within a single base folder.
+- [ ] **EXIF** (photo capture date): would be one more `DateSource::Exif`,
+      using the `kamadak-exif` dependency. Deferred until needed.
+- [x] **Log file**: done in phase 6, since it shares its format and
+      mechanism with the journal.
 
-## Fase 6: Journal de movimientos, `--undo` y log a archivo
+## Phase 6: Move journal, `--undo` and log file
 
-Núcleo en `src/journal.rs`; la CLI solo conecta los flags.
+Core in `src/journal.rs`; the CLI only wires up the flags.
 
-- [x] **Journal** en `<base>/.file-organizer-journal.json` (`serde` +
-      `serde_json`). Rutas relativas a la base (sigue siendo válido si se
-      mueve la carpeta), `version` y `created_at`.
-  - `JournalRecorder` lo construye observando los `Event` de `execute`
-    (`Moved` y `FolderCreated`), así que `execute` no cambió. Cualquier
-    frontend lo usa igual: `recorder.record(&event)` y luego `recorder.save()`.
-  - Solo se guarda si la ejecución movió algo: una pasada sin cambios no
-    borra lo que se puede deshacer.
-  - Escritura atómica (temporal + `rename`).
-  - Las rutas que no son UTF-8 no caben en JSON: no se registran, y la CLI
-    avisa de que esos movimientos no se podrán deshacer.
+- [x] **Journal** at `<base>/.file-organizer-journal.json` (`serde` +
+      `serde_json`). Paths relative to the base (still valid if the folder
+      moves), plus `version` and `created_at`.
+  - `JournalRecorder` builds it by observing `execute`'s `Event`s (`Moved`
+    and `FolderCreated`), so `execute` didn't change. Any frontend uses it
+    the same way: `recorder.record(&event)`, then `recorder.save()`.
+  - It's only saved if the run moved something: a pass with no changes
+    doesn't erase what can be undone.
+  - Atomic write (temporary file + `rename`).
+  - Non-UTF-8 paths don't fit in JSON: they aren't recorded, and the CLI
+    warns that those moves can't be undone.
 - [x] **`undo(base, &journal, on_event) -> UndoResult { summary, pending }`**:
-  - devuelve los archivos en orden inverso reutilizando
-    `executor::move_with_retries`, que nunca sobrescribe y resuelve
-    conflictos con sufijo;
-  - recrea las subcarpetas de origen si se borraron (modo recursivo);
-  - elimina solo las carpetas creadas que quedaron vacías (`remove_dir`);
-    nuevo `Event::FolderRemoved`;
-  - lo que falla queda en `pending`; `Journal::persist` lo guarda para
-    reintentarlo o borra el journal si ya no queda nada.
-- [x] **Seguridad:** `Journal::load` rechaza rutas absolutas o con `..`. El
-      journal es un archivo editable y no debe permitir mover nada fuera de la
-      base.
-- [x] El escaneo ignora el journal (también en modo recursivo).
-- [x] **CLI:** `--undo` (requiere RUTA; incompatible con las opciones de
-      escaneo) con vista previa y confirmación (o `-y`), y la pista
-      "Puede deshacerlo con…" tras organizar.
-- [x] **`--log <ARCHIVO>`** (`src/cli/log.rs`): en modo append, con las mismas
-      líneas que la consola más una marca de tiempo, una cabecera por operación
-      y una línea de resultado.
-  - Para ello `render` pasó a producir texto (`event_line`, `warning_line`
-    → `Line { text, to_stderr }`), que se imprime o se escribe en el log.
-- [x] Tests: ida y vuelta completa en modo recursivo (incluida la subcarpeta
-      borrada), carpetas no vacías que se conservan, journal que sobrevive a
-      una pasada sin cambios, rechazo de `../`, carpeta sin journal y el
-      parseo de `--undo`.
+  - puts files back in reverse order, reusing
+    `executor::move_with_retries`, which never overwrites and resolves
+    conflicts with a suffix;
+  - recreates source subfolders if they were deleted (recursive mode);
+  - removes only the created folders that were left empty (`remove_dir`);
+    new `Event::FolderRemoved`;
+  - whatever fails stays in `pending`; `Journal::persist` saves it for a
+    retry, or deletes the journal when nothing is left.
+- [x] **Security:** `Journal::load` rejects absolute paths and paths with
+      `..`. The journal is an editable file and must not allow moving
+      anything outside the base.
+- [x] The scan ignores the journal (also in recursive mode).
+- [x] **CLI:** `--undo` (requires PATH; incompatible with the scan options)
+      with a preview and confirmation (or `-y`), and the "To undo this run…"
+      hint after organizing.
+- [x] **`--log <FILE>`** (`src/cli/log.rs`): append mode, with the same lines
+      as the console plus a timestamp, a header per operation and a result
+      line.
+  - For this, `render` now produces text (`event_line`, `warning_line` →
+    `Line { text, to_stderr }`), which is either printed or written to the
+    log.
+- [x] Tests: full round trip in recursive mode (including a deleted
+      subfolder), non-empty folders that are kept, a journal that survives a
+      pass with no changes, rejection of `../`, a folder without a journal
+      and `--undo` parsing.
 
-## Fase 7: Workspace + GUI (trabajo futuro)
+## Phase 7: Workspace + GUI (future work)
 
-**Decisión:** la GUI queda como trabajo futuro, en una rama propia
-(`feature/gui`). Esta fase no se implementa en `refactor/core-lib`.
+**Decision:** the GUI is future work, on its own branch (`feature/gui`). This
+phase isn't implemented in `refactor/core-lib`.
 
-El diseño completo está en **[`GUI_DESIGN.md`](GUI_DESIGN.md)**: objetivos,
-principios de usabilidad, arquitectura (workspace, hilos, máquina de estados),
-pantallas, accesibilidad, empaquetado, pruebas e hitos G0 a G7.
+The full design is in **[`GUI_DESIGN.md`](GUI_DESIGN.md)**: goals, usability
+principles, architecture (workspace, threads, state machine), screens,
+accessibility, packaging, testing and milestones G0 to G7.
 
-Respecto a lo que este plan preveía, el análisis del diseño simplificó los
-cambios del núcleo:
+Compared with what this plan originally expected, the design analysis
+simplified the core changes:
 
-- **Progreso:** no necesita `Event::Progress`. Cada movimiento produce
-  exactamente un evento terminal, así que la GUI cuenta eventos.
-- **Ejecutar un subconjunto:** no necesita API nueva. `Plan::moves` es
-  público y basta con `#[derive(Clone)]` en `PlannedMove`.
-- **Sí hace falta:** cancelación cooperativa (`execute_cancellable` /
-  `undo_cancellable`), `date`/`size` en `PlannedMove` y `Display` para
+- **Progress:** no need for `Event::Progress`. Each move produces exactly one
+  terminal event, so the GUI counts events.
+- **Running a subset:** no new API needed. `Plan::moves` is public, and
+  `#[derive(Clone)]` on `PlannedMove` is enough.
+- **Still needed:** cooperative cancellation (`execute_cancellable` /
+  `undo_cancellable`), `date`/`size` on `PlannedMove`, and `Display` for
   `Failure`/`ScanWarning`.
+
+## English localization
+
+All user-facing text (CLI messages, prompts, `--help`), code comments and
+documentation are in English. Prompts accept `y`/`yes` and `n`/`no` (plus
+`q`/`quit`/`exit`). With English text, `--help` uses clap's standard layout,
+so the custom help template from phase 4 was removed.
 
 ---
 
-## Seguimiento
+## Status
 
-| Fase | Estado |
-|------|--------|
-| 1. Higiene | ✅ (salvo `repository`, que espera a que exista un remoto) · MSRV 1.82 |
-| 2. lib/bin + eventos | ✅ |
-| 3. Claridad + bugs | ✅ |
+| Phase | Status |
+|-------|--------|
+| 1. Hygiene | ✅ · MSRV 1.82 |
+| 2. lib/bin + events | ✅ |
+| 3. Clarity + bugs | ✅ |
 | 4. clap + `--by-day` | ✅ |
-| 5. Features sobre `Options` | ✅ (EXIF pendiente; log → fase 6) |
+| 5. Features on `Options` | ✅ (EXIF deferred; log → phase 6) |
 | 6. Journal + `--undo` + log | ✅ |
-| 7. Workspace + GUI | 📄 Diseñada en `GUI_DESIGN.md`; se implementará en `feature/gui` |
+| 7. Workspace + GUI | 📄 Designed in `GUI_DESIGN.md`; to be built on `feature/gui` |
