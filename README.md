@@ -50,6 +50,10 @@ Before:                          After:
   permissions.
 - 🔗 **Symlinks left alone** — symbolic links are skipped (moving them could
   break relative targets and their date would be the target's, not the link's).
+- ↩️ **Undo** — every run records its moves in `.file-organizer-journal.json`
+  inside the target folder; `--undo` puts the files back (recreating
+  subfolders) and removes the date folders it emptied.
+- 📝 **Log file** — `--log FILE` appends a timestamped record of every action.
 - 📊 **Summary report** — displays a final count of moved, skipped, and failed
   files.
 - 🔄 **Loop mode** — organize multiple folders in one session without restarting.
@@ -98,6 +102,8 @@ file-organizer-by-date [OPTIONS] [PATH]
 | `--date <DATE>`      | Date used for grouping: `modified` (default) or `created` |
 | `-e`, `--extensions` | Only move files with these extensions (`jpg,png`)      |
 | `-r`, `--recursive`  | Also collect files from subfolders                     |
+| `--undo`             | Undo the last run on `PATH` (requires `PATH`)          |
+| `--log <FILE>`       | Append a timestamped log of every action to `FILE`     |
 | `-h`, `--help`       | Print help                                             |
 | `-V`, `--version`    | Print version                                          |
 
@@ -119,6 +125,9 @@ single folder and exit (**script mode**):
 
 # Only photos, including those in subfolders, grouped by creation date
 ./target/release/file-organizer-by-date "D:\Camera" -r -e jpg,png,heic --date created
+
+# Changed your mind? Put everything back where it was
+./target/release/file-organizer-by-date "D:\Camera" --undo
 ```
 
 Quote the path if it contains spaces. All grouping and filtering options also
@@ -203,6 +212,7 @@ file-organizer-by-date/
     ├── grouping.rs     # Date → destination folder name
     ├── options.rs      # Options: granularity, date source, filter, recursion
     ├── filter.rs       # Extension filter
+    ├── journal.rs      # Journal of the last run + undo()
     ├── main.rs         # CLI entry point
     └── cli/            # Argument parsing, prompts and text rendering
 ```
@@ -218,6 +228,7 @@ printing, so other frontends (e.g. a GUI) can reuse it as-is.
 |-------------------------------------------|----------------------------------|
 | [chrono](https://crates.io/crates/chrono) | Date/time formatting and parsing |
 | [clap](https://crates.io/crates/clap)     | Command-line argument parsing    |
+| [serde](https://crates.io/crates/serde) + [serde_json](https://crates.io/crates/serde_json) | Undo journal (JSON) |
 
 ---
 
@@ -238,6 +249,15 @@ printing, so other frontends (e.g. a GUI) can reuse it as-is.
   mode.
 - If a file with the same name already exists in the destination folder, a
   numeric suffix is added (up to `_10000`).
+- **Undo covers the last run that moved files** in a folder. A run that moves
+  nothing keeps the previous journal. Undo never overwrites: if a file now
+  occupies an original location, the restored file gets a numeric suffix.
+  Date folders are removed only if they are empty, so anything you added to
+  them afterwards is left alone. Moves that fail stay in the journal so you
+  can retry `--undo`.
+- File names that aren't valid UTF-8 are organized normally but can't be
+  recorded in the JSON journal; the tool warns that those moves can't be
+  undone.
 - The dry-run preview lets you review changes before committing.
 
 ---
@@ -266,10 +286,10 @@ This project is licensed under the [MIT License](LICENSE).
 - [x] ~~Interactive mode with confirmation prompt~~
 - [x] ~~Loop mode to organize multiple folders~~
 - [x] ~~Add `--by-day` flag to organize by day (`Y2024-M01-D15`)~~
-- [ ] Add `--undo` flag to reverse the last organization
+- [x] ~~Add `--undo` flag to reverse the last organization~~
 - [x] ~~Add `--extensions` flag to filter by file type~~
 - [x] ~~Add recursive mode with `--recursive` flag~~
-- [ ] Add logging to a file
+- [x] ~~Add logging to a file~~
 - [ ] Publish to [crates.io](https://crates.io)
 
 ---

@@ -210,15 +210,44 @@ Cada una tocó un único punto del núcleo (`scan` y `Options`) más su flag en
 
 ## Fase 6: Journal de movimientos, `--undo` y log a archivo
 
-- [ ] `execute` registra cada `Moved { from, to }` (ya lo emite como evento).
-- [ ] La CLI, o un `JournalWriter` del núcleo, lo guarda en
-      `<base>/.file-organizer-journal.json` (añadir `serde` + `serde_json`).
-- [ ] `undo(journal) -> Summary`: mueve cada `to → from` reutilizando
-      `fs_ops::move_file` (nunca sobrescribe), en orden inverso, y borra las
-      carpetas que queden vacías.
-- [ ] Excluir el propio journal del escaneo.
-- [ ] `--log <ARCHIVO>`: un consumidor más de `Event` en la CLI, que escribe
-      cada evento con marca de tiempo. Comparte el mecanismo con el journal.
+Núcleo en `src/journal.rs`; la CLI solo conecta los flags.
+
+- [x] **Journal** en `<base>/.file-organizer-journal.json` (`serde` +
+      `serde_json`). Rutas relativas a la base (sigue siendo válido si se
+      mueve la carpeta), `version` y `created_at`.
+  - `JournalRecorder` lo construye observando los `Event` de `execute`
+    (`Moved` y `FolderCreated`), así que `execute` no cambió. Cualquier
+    frontend lo usa igual: `recorder.record(&event)` y luego `recorder.save()`.
+  - Solo se guarda si la ejecución movió algo: una pasada sin cambios no
+    borra lo que se puede deshacer.
+  - Escritura atómica (temporal + `rename`).
+  - Las rutas que no son UTF-8 no caben en JSON: no se registran, y la CLI
+    avisa de que esos movimientos no se podrán deshacer.
+- [x] **`undo(base, &journal, on_event) -> UndoResult { summary, pending }`**:
+  - devuelve los archivos en orden inverso reutilizando
+    `executor::move_with_retries`, que nunca sobrescribe y resuelve
+    conflictos con sufijo;
+  - recrea las subcarpetas de origen si se borraron (modo recursivo);
+  - elimina solo las carpetas creadas que quedaron vacías (`remove_dir`);
+    nuevo `Event::FolderRemoved`;
+  - lo que falla queda en `pending`; `Journal::persist` lo guarda para
+    reintentarlo o borra el journal si ya no queda nada.
+- [x] **Seguridad:** `Journal::load` rechaza rutas absolutas o con `..`. El
+      journal es un archivo editable y no debe permitir mover nada fuera de la
+      base.
+- [x] El escaneo ignora el journal (también en modo recursivo).
+- [x] **CLI:** `--undo` (requiere RUTA; incompatible con las opciones de
+      escaneo) con vista previa y confirmación (o `-y`), y la pista
+      "Puede deshacerlo con…" tras organizar.
+- [x] **`--log <ARCHIVO>`** (`src/cli/log.rs`): en modo append, con las mismas
+      líneas que la consola más una marca de tiempo, una cabecera por operación
+      y una línea de resultado.
+  - Para ello `render` pasó a producir texto (`event_line`, `warning_line`
+    → `Line { text, to_stderr }`), que se imprime o se escribe en el log.
+- [x] Tests: ida y vuelta completa en modo recursivo (incluida la subcarpeta
+      borrada), carpetas no vacías que se conservan, journal que sobrevive a
+      una pasada sin cambios, rechazo de `../`, carpeta sin journal y el
+      parseo de `--undo`.
 
 ## Fase 7: Workspace + GUI
 
@@ -253,5 +282,5 @@ Cada una tocó un único punto del núcleo (`scan` y `Options`) más su flag en
 | 3. Claridad + bugs | ✅ |
 | 4. clap + `--by-day` | ✅ |
 | 5. Features sobre `Options` | ✅ (EXIF pendiente; log → fase 6) |
-| 6. Journal + `--undo` | ⏳ |
+| 6. Journal + `--undo` + log | ✅ |
 | 7. Workspace + GUI | ⏳ |
