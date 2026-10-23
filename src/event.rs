@@ -9,6 +9,11 @@ pub enum Event {
     FolderCreated {
         folder_name: String,
     },
+    /// Solo al deshacer: una carpeta creada por la ejecución quedó vacía y
+    /// se eliminó.
+    FolderRemoved {
+        folder_name: String,
+    },
     /// El nombre ya estaba ocupado en el destino y se usará otro.
     /// `late` indica que el conflicto apareció después de la comprobación
     /// inicial (otro proceso creó el archivo: TOCTOU) y se reintenta.

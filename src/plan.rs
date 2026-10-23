@@ -4,6 +4,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use crate::grouping::{folder_for, is_date_folder};
+use crate::journal::JOURNAL_FILE_NAME;
 use crate::options::{DateSource, Options};
 
 /// Resultado de escanear una carpeta: qué se movería y qué se omitió.
@@ -139,7 +140,8 @@ impl Scanner<'_> {
             .extensions
             .as_ref()
             .is_none_or(|filter| filter.matches(file));
-        passes_filter && !self.self_exe.is(file)
+        let is_journal = file.file_name().is_some_and(|n| n == JOURNAL_FILE_NAME);
+        passes_filter && !is_journal && !self.self_exe.is(file)
     }
 
     fn plan_move(&mut self, path: PathBuf) {

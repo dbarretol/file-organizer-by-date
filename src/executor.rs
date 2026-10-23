@@ -99,7 +99,7 @@ fn ensure_dest_dir(
 /// La comprobación con exists() es solo orientativa: move_file nunca
 /// sobrescribe, así que si otro proceso crea el destino justo después de
 /// comprobar (TOCTOU), se resuelve otro nombre y se reintenta.
-fn move_with_retries(
+pub(crate) fn move_with_retries(
     source: &Path,
     dest_dir: &Path,
     file_name: &OsStr,
