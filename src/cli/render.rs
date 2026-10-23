@@ -3,10 +3,15 @@
 use std::io;
 use std::path::Path;
 
-use file_organizer_by_date::{DateSource, Event, Failure, Plan, ScanWarning, Summary};
+use file_organizer_by_date::{
+    DateSource, Event, Failure, Journal, Plan, ScanWarning, Summary, JOURNAL_FILE_NAME,
+};
 
 /// Máximo de archivos listados por carpeta en la vista previa.
 const MAX_PREVIEW_PER_GROUP: usize = 10;
+
+/// Máximo de movimientos listados en la vista previa de --undo.
+const MAX_UNDO_PREVIEW: usize = 20;
 
 const SEPARATOR: &str = "─────────────────────────────────────────────";
 
@@ -52,34 +57,63 @@ pub fn scan_error(error: &io::Error) {
     eprintln!("Error al escanear: {error}");
 }
 
-pub fn warnings(warnings: &[ScanWarning]) {
-    for warning in warnings {
-        match warning {
-            ScanWarning::UnreadableEntry(e) => {
-                eprintln!("⏭️  Se omite una entrada ilegible: {e}")
-            }
-            ScanWarning::Symlink(path) => {
-                println!("⏭️  Se omite enlace simbólico: {}", path.display())
-            }
-            ScanWarning::UnreadableDir { path, error } => eprintln!(
-                "⏭️  Se omite la carpeta '{}' (no se pudo leer): {}",
-                path.display(),
-                error
-            ),
-            ScanWarning::NoDate {
-                path,
-                source,
-                error,
-            } => eprintln!(
-                "⏭️  Se omite '{}' (no se pudo leer su fecha de {}): {}",
-                path.display(),
-                match source {
-                    DateSource::Modified => "modificación",
-                    DateSource::Created => "creación",
-                },
-                error
-            ),
+/// Una línea de salida y el canal al que va. Separar el texto de la
+/// impresión permite reutilizarlo en el log (`--log`).
+pub struct Line {
+    pub text: String,
+    pub to_stderr: bool,
+}
+
+impl Line {
+    fn out(text: String) -> Self {
+        Line {
+            text,
+            to_stderr: false,
         }
+    }
+
+    fn err(text: String) -> Self {
+        Line {
+            text,
+            to_stderr: true,
+        }
+    }
+
+    pub fn print(&self) {
+        if self.to_stderr {
+            eprintln!("{}", self.text);
+        } else {
+            println!("{}", self.text);
+        }
+    }
+}
+
+pub fn warning_line(warning: &ScanWarning) -> Line {
+    match warning {
+        ScanWarning::UnreadableEntry(e) => {
+            Line::err(format!("⏭️  Se omite una entrada ilegible: {e}"))
+        }
+        ScanWarning::Symlink(path) => {
+            Line::out(format!("⏭️  Se omite enlace simbólico: {}", path.display()))
+        }
+        ScanWarning::UnreadableDir { path, error } => Line::err(format!(
+            "⏭️  Se omite la carpeta '{}' (no se pudo leer): {}",
+            path.display(),
+            error
+        )),
+        ScanWarning::NoDate {
+            path,
+            source,
+            error,
+        } => Line::err(format!(
+            "⏭️  Se omite '{}' (no se pudo leer su fecha de {}): {}",
+            path.display(),
+            match source {
+                DateSource::Modified => "modificación",
+                DateSource::Created => "creación",
+            },
+            error
+        )),
     }
 }
 
@@ -129,63 +163,68 @@ pub fn cancelled() {
     println!("❌ Operación cancelada. No se movió ningún archivo.");
 }
 
-pub fn event(event: Event) {
+pub fn event_line(event: &Event) -> Line {
     match event {
-        Event::FolderCreated { folder_name } => println!("📁 Carpeta creada: {folder_name}"),
+        Event::FolderCreated { folder_name } => {
+            Line::out(format!("📁 Carpeta creada: {folder_name}"))
+        }
+        Event::FolderRemoved { folder_name } => {
+            Line::out(format!("🗑️  Carpeta vacía eliminada: {folder_name}"))
+        }
         Event::Conflict {
             original,
             renamed_to,
             late: false,
-        } => println!(
+        } => Line::out(format!(
             "⚠️  Conflicto: '{}' ya existe → renombrando a '{}'",
             original.to_string_lossy(),
             renamed_to.to_string_lossy()
-        ),
+        )),
         Event::Conflict {
             original,
             renamed_to,
             late: true,
-        } => println!(
+        } => Line::out(format!(
             "⚠️  Conflicto: '{}' apareció en el destino → reintentando como '{}'",
             original.to_string_lossy(),
             renamed_to.to_string_lossy()
-        ),
-        Event::Moved { from, to } => println!("✔ {} → {}", from.display(), to.display()),
-        Event::SourceMissing { path } => println!("⏭️  Archivo ya no existe: {}", path.display()),
-        Event::Failed { source, failure } => failed(&source, &failure),
+        )),
+        Event::Moved { from, to } => Line::out(format!("✔ {} → {}", from.display(), to.display())),
+        Event::SourceMissing { path } => {
+            Line::out(format!("⏭️  Archivo ya no existe: {}", path.display()))
+        }
+        Event::Failed { source, failure } => Line::err(failure_text(source, failure)),
     }
 }
 
-fn failed(source: &Path, failure: &Failure) {
+fn failure_text(source: &Path, failure: &Failure) -> String {
     let source = source.display();
     match failure {
-        Failure::DestNotADirectory { dest_dir } => eprintln!(
+        Failure::DestNotADirectory { dest_dir } => format!(
             "✘ '{}' ya existe pero no es una carpeta; se omite '{}'",
             dest_dir.display(),
             source
         ),
-        Failure::CreateDir { dest_dir, error } => {
-            eprintln!(
-                "✘ Error creando carpeta '{}': {}",
-                dest_dir.display(),
-                error
-            )
-        }
+        Failure::CreateDir { dest_dir, error } => format!(
+            "✘ Error creando carpeta '{}': {}",
+            dest_dir.display(),
+            error
+        ),
         Failure::NoFileName => {
-            eprintln!("✘ Se omite '{source}': la ruta no tiene nombre de archivo")
+            format!("✘ Se omite '{source}': la ruta no tiene nombre de archivo")
         }
-        Failure::ResolveConflict(error) => eprintln!("✘ Error resolviendo conflicto: {error}"),
-        Failure::DestinationBusy { attempts } => eprintln!(
+        Failure::ResolveConflict(error) => format!("✘ Error resolviendo conflicto: {error}"),
+        Failure::DestinationBusy { attempts } => format!(
             "✘ No se pudo mover '{source}': el destino sigue ocupado tras {attempts} intentos"
         ),
-        Failure::CopiedButOriginalRemains { dest, error } => eprintln!(
+        Failure::CopiedButOriginalRemains { dest, error } => format!(
             "⚠️  '{}' se copió a '{}' pero no se pudo borrar el original (queda duplicado): {}",
             source,
             dest.display(),
             error
         ),
         Failure::Move { rename, copy } => {
-            eprintln!("✘ Error moviendo '{source}': {copy} (rename falló con: {rename})")
+            format!("✘ Error moviendo '{source}': {copy} (rename falló con: {rename})")
         }
     }
 }
@@ -203,4 +242,50 @@ pub fn separator() {
 
 pub fn goodbye() {
     println!("👋 ¡Hasta luego!");
+}
+
+pub fn undo_hint(base: &Path) {
+    println!(
+        "↩️  Puede deshacerlo con: file-organizer-by-date \"{}\" --undo",
+        base.display()
+    );
+}
+
+pub fn unrecorded(count: usize) {
+    eprintln!(
+        "⚠️  {count} movimiento(s) con nombres no UTF-8 no se registraron y no podrán deshacerse."
+    );
+}
+
+pub fn log_error(error: &io::Error) {
+    eprintln!("✘ No se pudo abrir el archivo de log: {error}");
+}
+
+pub fn journal_error(error: &io::Error) {
+    eprintln!("✘ Error con el registro de deshacer ({JOURNAL_FILE_NAME}): {error}");
+}
+
+pub fn nothing_to_undo() {
+    println!("\n⚠️  No hay nada que deshacer en esa carpeta.");
+}
+
+/// Lista lo que se restaurará: `destino actual → ubicación original`.
+pub fn undo_preview(journal: &Journal) {
+    // Si alguien editó la fecha a mano, se muestra tal cual
+    let when = chrono::DateTime::parse_from_rfc3339(&journal.created_at)
+        .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
+        .unwrap_or_else(|_| journal.created_at.clone());
+    println!("\n↩️  Deshacer la ejecución del {when}:");
+    println!("{SEPARATOR}");
+    for entry in journal.moves.iter().take(MAX_UNDO_PREVIEW) {
+        println!("   {} → {}", entry.to.display(), entry.from.display());
+    }
+    if journal.moves.len() > MAX_UNDO_PREVIEW {
+        println!("   ... y {} más", journal.moves.len() - MAX_UNDO_PREVIEW);
+    }
+    println!("{SEPARATOR}");
+    println!(
+        "📊 Se restaurarán {} archivo(s) a su ubicación original.\n",
+        journal.moves.len()
+    );
 }

@@ -70,6 +70,18 @@ pub struct Cli {
     #[arg(short, long)]
     pub recursive: bool,
 
+    /// Deshace la última ejecución sobre RUTA (requiere RUTA)
+    #[arg(
+        long,
+        requires = "path",
+        conflicts_with_all = ["group_by", "by_day", "date", "extensions", "recursive"]
+    )]
+    pub undo: bool,
+
+    /// Añade a ese archivo un registro con marca de tiempo de lo ocurrido
+    #[arg(long, value_name = "ARCHIVO")]
+    pub log: Option<PathBuf>,
+
     /// Muestra esta ayuda
     #[arg(short, long, action = ArgAction::Help)]
     help: Option<bool>,
@@ -178,6 +190,19 @@ mod tests {
     fn rejects_a_second_path() {
         let err = parse(&["a", "b"]).unwrap_err();
         assert_eq!(err.kind(), ErrorKind::UnknownArgument);
+    }
+
+    #[test]
+    fn undo_requires_path_and_rejects_scan_options() {
+        assert!(parse(&["carpeta", "--undo", "-y"]).unwrap().undo);
+        assert_eq!(
+            parse(&["--undo"]).unwrap_err().kind(),
+            ErrorKind::MissingRequiredArgument
+        );
+        assert_eq!(
+            parse(&["carpeta", "--undo", "-r"]).unwrap_err().kind(),
+            ErrorKind::ArgumentConflict
+        );
     }
 
     #[test]
