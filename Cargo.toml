@@ -1,6 +1,6 @@
 [package]
 name = "file-organizer-by-date"
-version = "0.5.0"
+version = "0.6.0"
 edition = "2021"
 rust-version = "1.82"
 description = "Organize files into year/month/day folders by date, with a preview first, no overwrites and undo"
