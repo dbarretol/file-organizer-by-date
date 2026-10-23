@@ -166,11 +166,23 @@ Y<year>-M<month>
 
 ```text
 file-organizer-by-date/
-├── Cargo.toml       # Dependencies and project metadata
-├── README.md        # This file
+├── Cargo.toml          # Dependencies and project metadata
+├── README.md           # This file
+├── docs/
+│   └── REFACTOR_PLAN.md
 └── src/
-    └── main.rs      # Application source code
+    ├── lib.rs          # Core library API (no printing, no stdin)
+    ├── plan.rs         # scan(): directory → Plan of moves + warnings
+    ├── executor.rs     # execute(): Plan → Events + Summary
+    ├── event.rs        # Event / Failure types emitted by the core
+    ├── fs_ops.rs       # Safe moves: never overwrite, TOCTOU, copy fallback
+    ├── grouping.rs     # Date → destination folder name
+    ├── main.rs         # CLI entry point
+    └── cli/            # Argument parsing, prompts and text rendering
 ```
+
+The core (`lib.rs` and its modules) returns data and emits events instead of
+printing, so other frontends (e.g. a GUI) can reuse it as-is.
 
 ---
 
