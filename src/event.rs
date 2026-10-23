@@ -37,15 +37,28 @@ pub enum Event {
 pub enum Failure {
     /// La ruta destino existe pero no es una carpeta (p. ej. un archivo
     /// llamado "Y2026-M07" sin extensión).
-    DestNotADirectory { dest_dir: PathBuf },
-    CreateDir { dest_dir: PathBuf, error: io::Error },
+    DestNotADirectory {
+        dest_dir: PathBuf,
+    },
+    CreateDir {
+        dest_dir: PathBuf,
+        error: io::Error,
+    },
     NoFileName,
     ResolveConflict(io::Error),
     /// El destino siguió ocupado tras varios reintentos.
-    DestinationBusy { attempts: u32 },
+    DestinationBusy {
+        attempts: u32,
+    },
     /// La copia al destino se completó, pero no se pudo borrar el original:
     /// el archivo queda duplicado (origen y destino).
-    CopiedButOriginalRemains { dest: PathBuf, error: io::Error },
+    CopiedButOriginalRemains {
+        dest: PathBuf,
+        error: io::Error,
+    },
     /// Fallaron tanto rename como copy.
-    Move { rename: io::Error, copy: io::Error },
+    Move {
+        rename: io::Error,
+        copy: io::Error,
+    },
 }
