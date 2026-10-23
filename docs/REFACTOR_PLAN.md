@@ -58,6 +58,12 @@ deben seguir pasando en cada fase.
 
 **Criterio de aceptación:** el CI pasa en las tres plataformas.
 
+> ⚠️ **MSRV real en Windows:** con el `Cargo.lock` actual, `chrono` →
+> `iana-time-zone` → `windows-core` 0.62 exige Rust 1.82. En Linux, 1.75 es
+> correcto (el job de MSRV corre en Ubuntu). Hay dos opciones: subir
+> `rust-version` a 1.82, o fijar versiones antiguas de esas dependencias en el
+> lock. Queda pendiente de decidir.
+
 ---
 
 ## Fase 2: Separar `lib` y `bin`, con un núcleo basado en eventos
