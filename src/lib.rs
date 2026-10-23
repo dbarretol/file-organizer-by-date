@@ -8,9 +8,11 @@ mod event;
 mod executor;
 mod fs_ops;
 mod grouping;
+mod options;
 mod plan;
 
 pub use event::{Event, Failure};
 pub use executor::{execute, Summary};
-pub use grouping::folder_for;
+pub use grouping::{folder_for, Granularity};
+pub use options::Options;
 pub use plan::{scan, Plan, PlannedMove, ScanWarning};

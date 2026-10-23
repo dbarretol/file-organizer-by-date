@@ -148,6 +148,7 @@ fn next_free_name(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::options::Options;
     use crate::plan::scan;
 
     #[test]
@@ -157,7 +158,7 @@ mod tests {
         fs::write(base.join("a.txt"), "nuevo").unwrap();
         fs::write(base.join("b.txt"), "").unwrap();
 
-        let plan = scan(base).unwrap();
+        let plan = scan(base, &Options::default()).unwrap();
         let folder = plan.moves[0].folder_name.clone();
         // "a.txt" ya existe en el destino: debe renombrarse, no sobrescribirse
         fs::create_dir(base.join(&folder)).unwrap();
@@ -191,7 +192,7 @@ mod tests {
     fn execute_counts_vanished_source_as_skipped() {
         let dir = tempfile::tempdir().unwrap();
         fs::write(dir.path().join("a.txt"), "").unwrap();
-        let plan = scan(dir.path()).unwrap();
+        let plan = scan(dir.path(), &Options::default()).unwrap();
         fs::remove_file(dir.path().join("a.txt")).unwrap();
 
         let summary = execute(&plan, &mut |_| {});
@@ -204,7 +205,7 @@ mod tests {
     fn execute_fails_when_dest_folder_is_a_file() {
         let dir = tempfile::tempdir().unwrap();
         fs::write(dir.path().join("a.txt"), "").unwrap();
-        let plan = scan(dir.path()).unwrap();
+        let plan = scan(dir.path(), &Options::default()).unwrap();
         fs::write(dir.path().join(&plan.moves[0].folder_name), "").unwrap();
 
         let mut events = Vec::new();

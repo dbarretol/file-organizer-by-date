@@ -4,6 +4,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use crate::grouping::folder_for;
+use crate::options::Options;
 
 /// Resultado de escanear una carpeta: qué se movería y qué se omitió.
 /// No toca el disco más allá de leer; ejecutarlo es tarea de `execute`.
@@ -46,7 +47,7 @@ impl Plan {
 
 /// Lee SOLO los archivos sueltos del directorio indicado (sin recursión).
 /// Los errores por archivo se registran como avisos en lugar de abortar.
-pub fn scan(dir: &Path) -> io::Result<Plan> {
+pub fn scan(dir: &Path, options: &Options) -> io::Result<Plan> {
     let self_exe = SelfExe::locate();
     let mut moves = Vec::new();
     let mut warnings = Vec::new();
@@ -73,7 +74,7 @@ pub fn scan(dir: &Path) -> io::Result<Plan> {
 
         match fs::metadata(&path).and_then(|m| m.modified()) {
             Ok(modified) => moves.push(PlannedMove {
-                folder_name: folder_for(modified.into()),
+                folder_name: folder_for(modified.into(), options.granularity),
                 source: path,
             }),
             Err(error) => warnings.push(ScanWarning::NoModifiedDate { path, error }),
@@ -115,6 +116,7 @@ impl SelfExe {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::grouping::Granularity;
 
     #[test]
     fn scan_lists_only_loose_files_sorted_by_folder_and_name() {
@@ -124,7 +126,7 @@ mod tests {
         fs::create_dir(dir.path().join("subcarpeta")).unwrap();
         fs::write(dir.path().join("subcarpeta").join("dentro.txt"), "").unwrap();
 
-        let plan = scan(dir.path()).unwrap();
+        let plan = scan(dir.path(), &Options::default()).unwrap();
 
         let names: Vec<_> = plan
             .moves
@@ -133,5 +135,25 @@ mod tests {
             .collect();
         assert_eq!(names, ["a.txt", "b.txt"]);
         assert!(plan.warnings.is_empty());
+    }
+
+    #[test]
+    fn scan_uses_the_requested_granularity() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("a.txt"), "").unwrap();
+
+        let options = Options {
+            granularity: Granularity::Day,
+        };
+        let plan = scan(dir.path(), &options).unwrap();
+
+        let mtime = fs::metadata(dir.path().join("a.txt"))
+            .unwrap()
+            .modified()
+            .unwrap();
+        assert_eq!(
+            plan.moves[0].folder_name,
+            folder_for(mtime.into(), Granularity::Day)
+        );
     }
 }
