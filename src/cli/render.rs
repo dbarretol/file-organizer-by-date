@@ -5,8 +5,6 @@ use std::path::Path;
 
 use file_organizer_by_date::{Event, Failure, Plan, ScanWarning, Summary};
 
-use super::args::UsageError;
-
 /// Máximo de archivos listados por carpeta en la vista previa.
 const MAX_PREVIEW_PER_GROUP: usize = 10;
 
@@ -41,33 +39,9 @@ pub fn banner() {
     println!();
 }
 
-pub fn usage() {
-    println!("Uso: file-organizer-by-date [RUTA] [--yes|-y]");
-    println!();
-    println!("Sin argumentos se inicia el modo interactivo.");
-    println!();
-    println!("Opciones:");
-    println!("  RUTA        Organiza esa carpeta y termina (modo script)");
-    println!("  --yes, -y   No pide confirmación antes de mover (requiere RUTA)");
-    println!("  --help, -h  Muestra esta ayuda");
-    println!();
-    println!("Códigos de salida:");
-    println!("  0  Éxito (o nada que organizar)");
-    println!("  1  Hubo errores al mover, se canceló, o la ruta no es válida");
-    println!("  2  Argumentos incorrectos");
-}
-
-pub fn usage_error(error: &UsageError) {
-    match error {
-        UsageError::MultiplePaths => {
-            eprintln!("✘ Se recibió más de una ruta. Si la ruta contiene espacios, escríbala entre comillas:");
-            eprintln!("     file-organizer-by-date \"C:\\Mi Carpeta\"");
-            eprintln!("  Uso: file-organizer-by-date [RUTA] [--yes|-y]");
-        }
-        UsageError::YesWithoutPath => eprintln!(
-            "✘ --yes requiere pasar también una ruta. Uso: file-organizer-by-date RUTA --yes"
-        ),
-    }
+pub fn quote_hint() {
+    eprintln!("Si la ruta contiene espacios, escríbala entre comillas:");
+    eprintln!("     file-organizer-by-date \"C:\\Mi Carpeta\"");
 }
 
 pub fn invalid_dir(path: &Path) {
