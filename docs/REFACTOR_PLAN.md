@@ -179,17 +179,36 @@ no devuelve nada, la salida de la CLI es idéntica y los tests pasan.
 
 ## Fase 5: Más features sobre `Options`
 
-Cada una toca un único punto:
+Cada una tocó un único punto del núcleo (`scan` y `Options`) más su flag en
+`src/cli/args.rs`; `executor`, `fs_ops` y `event` no cambiaron.
 
-| Feature | Punto de extensión |
-|---------|--------------------|
-| `--extensions jpg,png` | `Options::filter: Option<ExtFilter>`, aplicado en `scan` |
-| `--recursive` | `Options::recursive` en `scan`. Excluir las carpetas destino (`Y####…`) para que sea idempotente |
-| Fecha de creación / EXIF | `Options::date_source: DateSource { Modified, Created, … }` |
-| Log a archivo | Un consumidor más de `Event`, sin tocar el núcleo |
-| `--undo` | Ver la fase 6 |
+- [x] **`--extensions jpg,png` / `-e`**: `Options::extensions: Option<ExtensionFilter>`
+      (`src/filter.rs`). Normaliza `.JPG` → `jpg`, sin distinguir mayúsculas;
+      los archivos sin extensión nunca coinciden. Los archivos filtrados se
+      omiten en silencio.
+- [x] **`--recursive` / `-r`**: `Options::recursive`. `scan` pasa a ser un
+      recorrido (`Scanner::visit`) que:
+  - no sigue enlaces simbólicos ni junctions (sin ciclos), y avisa de ellos;
+  - salta cualquier carpeta con forma de destino (`Y####`, `Y####-M##`,
+    `Y####-M##-D##`, `grouping::is_date_folder`) a cualquier profundidad, de
+    modo que repetir la ejecución no cambia nada;
+  - mueve a las carpetas por fecha **de la carpeta base** (aplana) y deja las
+    subcarpetas vaciadas en su sitio;
+  - registra como aviso (`ScanWarning::UnreadableDir`) las subcarpetas que no
+    se pueden listar; solo un fallo al listar la carpeta base aborta.
+  - La vista previa muestra rutas relativas a la base, para distinguir
+    homónimos. Sin `-r` sigue mostrando solo el nombre.
+- [x] **`--date modified|created`**: `Options::date_source: DateSource`.
+      Si la plataforma o el sistema de archivos no ofrece fecha de creación,
+      el archivo se omite con `ScanWarning::NoDate` (antes `NoModifiedDate`).
+  - Nota: el fallback copiar+borrar (entre volúmenes) conserva el mtime pero
+    no la fecha de creación. Es irrelevante dentro de una misma carpeta base.
+- [ ] **EXIF** (fecha de captura de fotos): sería un `DateSource::Exif` más,
+      con la dependencia `kamadak-exif`. Queda pendiente hasta que haga falta.
+- [ ] **Log a archivo**: pasa a la fase 6, porque comparte formato y
+      mecanismo con el journal.
 
-## Fase 6: Journal de movimientos y `--undo`
+## Fase 6: Journal de movimientos, `--undo` y log a archivo
 
 - [ ] `execute` registra cada `Moved { from, to }` (ya lo emite como evento).
 - [ ] La CLI, o un `JournalWriter` del núcleo, lo guarda en
@@ -198,6 +217,8 @@ Cada una toca un único punto:
       `fs_ops::move_file` (nunca sobrescribe), en orden inverso, y borra las
       carpetas que queden vacías.
 - [ ] Excluir el propio journal del escaneo.
+- [ ] `--log <ARCHIVO>`: un consumidor más de `Event` en la CLI, que escribe
+      cada evento con marca de tiempo. Comparte el mecanismo con el journal.
 
 ## Fase 7: Workspace + GUI
 
@@ -231,6 +252,6 @@ Cada una toca un único punto:
 | 2. lib/bin + eventos | ✅ |
 | 3. Claridad + bugs | ✅ |
 | 4. clap + `--by-day` | ✅ |
-| 5. Features sobre `Options` | ⏳ |
+| 5. Features sobre `Options` | ✅ (EXIF pendiente; log → fase 6) |
 | 6. Journal + `--undo` | ⏳ |
 | 7. Workspace + GUI | ⏳ |
