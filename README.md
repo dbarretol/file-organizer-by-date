@@ -31,8 +31,15 @@ Before:                          After:
   `--yes` to skip confirmation) and check the exit code (0/1/2) from scripts.
 - 🔍 **Dry-run preview** — shows exactly what will happen before any file is
   moved, grouped by destination folder.
-- 📄 **Loose files only** — only moves files directly inside the target folder;
-  subdirectories and their contents are never touched.
+- 📄 **Loose files by default** — only moves files directly inside the target
+  folder; subdirectories are untouched unless you pass `--recursive`.
+- 🗂️ **Recursive mode** — `--recursive` also collects files from subfolders
+  (skipping already-organized `YXXXX…` folders) into the date folders of the
+  target directory.
+- 🎯 **Extension filter** — `--extensions jpg,png` moves only matching files
+  (case-insensitive).
+- 📅 **Date source** — group by modification date (default) or by creation
+  date with `--date created`.
 - 📁 **Auto-creates folders** — generates `YXXXX-MXX` directories automatically
   (or `YXXXX` / `YXXXX-MXX-DXX` with `--group-by year|day`).
 - 🛡️ **Name conflict resolution** — appends numeric suffixes (`_1`, `_2`...) to
@@ -88,6 +95,9 @@ file-organizer-by-date [OPTIONS] [PATH]
 | `-y`, `--yes`        | Don't ask for confirmation (requires `PATH`)           |
 | `--group-by <LEVEL>` | Folder granularity: `year`, `month` (default) or `day` |
 | `--by-day`           | Shortcut for `--group-by day`                          |
+| `--date <DATE>`      | Date used for grouping: `modified` (default) or `created` |
+| `-e`, `--extensions` | Only move files with these extensions (`jpg,png`)      |
+| `-r`, `--recursive`  | Also collect files from subfolders                     |
 | `-h`, `--help`       | Print help                                             |
 | `-V`, `--version`    | Print version                                          |
 
@@ -106,10 +116,13 @@ single folder and exit (**script mode**):
 
 # One folder per day (Y2024-M01-D15) instead of per month
 ./target/release/file-organizer-by-date "C:\Users\me\Downloads" --by-day
+
+# Only photos, including those in subfolders, grouped by creation date
+./target/release/file-organizer-by-date "D:\Camera" -r -e jpg,png,heic --date created
 ```
 
-Quote the path if it contains spaces. The grouping options also apply to
-interactive mode.
+Quote the path if it contains spaces. All grouping and filtering options also
+apply to interactive mode.
 
 ### Exit codes
 
@@ -188,6 +201,8 @@ file-organizer-by-date/
     ├── event.rs        # Event / Failure types emitted by the core
     ├── fs_ops.rs       # Safe moves: never overwrite, TOCTOU, copy fallback
     ├── grouping.rs     # Date → destination folder name
+    ├── options.rs      # Options: granularity, date source, filter, recursion
+    ├── filter.rs       # Extension filter
     ├── main.rs         # CLI entry point
     └── cli/            # Argument parsing, prompts and text rendering
 ```
@@ -211,11 +226,16 @@ printing, so other frontends (e.g. a GUI) can reuse it as-is.
 > **Always test on a copy of your files first.** Moving files is a destructive
 > operation that may be difficult to undo.
 
-- The tool **only moves loose files** directly inside the target directory.
-  Subdirectories and their contents are completely ignored.
-- The tool uses the file's **last modification date**, not the creation date.
-- Running the tool multiple times is safe — files already inside `YXXXX-MXX`
-  folders won't be touched since the tool doesn't enter subdirectories.
+- By default the tool **only moves loose files** directly inside the target
+  directory. With `--recursive` it also collects files from subfolders and
+  moves them **to the date folders of the target directory** (the subfolder
+  structure is flattened; emptied subfolders are left in place).
+- The tool uses the file's **last modification date** unless you pass
+  `--date created`. Creation dates are not available on every platform or
+  filesystem; files without one are skipped with a warning.
+- Running the tool multiple times is safe — files already inside `YXXXX`,
+  `YXXXX-MXX` or `YXXXX-MXX-DXX` folders are never touched, even in recursive
+  mode.
 - If a file with the same name already exists in the destination folder, a
   numeric suffix is added (up to `_10000`).
 - The dry-run preview lets you review changes before committing.
@@ -247,8 +267,8 @@ This project is licensed under the [MIT License](LICENSE).
 - [x] ~~Loop mode to organize multiple folders~~
 - [x] ~~Add `--by-day` flag to organize by day (`Y2024-M01-D15`)~~
 - [ ] Add `--undo` flag to reverse the last organization
-- [ ] Add `--extensions` flag to filter by file type
-- [ ] Add recursive mode with `--recursive` flag
+- [x] ~~Add `--extensions` flag to filter by file type~~
+- [x] ~~Add recursive mode with `--recursive` flag~~
 - [ ] Add logging to a file
 - [ ] Publish to [crates.io](https://crates.io)
 
