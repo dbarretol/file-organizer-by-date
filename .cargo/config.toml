@@ -1,0 +1,4 @@
+# Al resolver dependencias, preferir versiones compatibles con `rust-version`
+# (Cargo.toml) para que `cargo update` no rompa la MSRV.
+[resolver]
+incompatible-rust-versions = "fallback"
