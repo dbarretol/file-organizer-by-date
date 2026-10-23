@@ -4,6 +4,10 @@ version = "0.5.0"
 edition = "2021"
 rust-version = "1.75"
 description = "Organize files into folders by modification date"
+license = "MIT"
+readme = "README.md"
+keywords = ["files", "organizer", "date", "cli"]
+categories = ["command-line-utilities", "filesystem"]
 
 [dependencies]
 chrono = "0.4"
