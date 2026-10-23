@@ -30,8 +30,13 @@ jobs:
       - run: cargo test --locked
 
   msrv:
-    runs-on: ubuntu-latest
+    # Windows incluido: sus dependencias (windows-core) son las que fijan la MSRV
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.75
+      - uses: dtolnay/rust-toolchain@1.82
       - run: cargo build --locked
