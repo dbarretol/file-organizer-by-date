@@ -1,11 +1,11 @@
 use std::io::{self, Write};
 use std::path::PathBuf;
 
-/// Pide una carpeta hasta recibir una válida. `None` si el usuario sale
-/// ('q') o stdin se agota.
+/// Asks for a folder until a valid one is given. `None` if the user quits
+/// ('q') or stdin runs out.
 pub fn ask_for_directory() -> Option<PathBuf> {
     loop {
-        let input = read_line("📁 Ingrese la ruta de la carpeta a organizar (o 'q' para salir): ")?;
+        let input = read_line("📁 Enter the path of the folder to organize (or 'q' to quit): ")?;
         let input = input.trim();
 
         if input.eq_ignore_ascii_case("q") {
@@ -13,7 +13,7 @@ pub fn ask_for_directory() -> Option<PathBuf> {
         }
 
         if input.is_empty() {
-            println!("⚠️  La ruta no puede estar vacía. Intente de nuevo.\n");
+            println!("⚠️  The path can't be empty. Please try again.\n");
             continue;
         }
 
@@ -22,7 +22,7 @@ pub fn ask_for_directory() -> Option<PathBuf> {
 
         if !path.exists() {
             println!(
-                "⚠️  La ruta '{}' no existe. Intente de nuevo.\n",
+                "⚠️  The path '{}' doesn't exist. Please try again.\n",
                 path.display()
             );
             continue;
@@ -30,7 +30,7 @@ pub fn ask_for_directory() -> Option<PathBuf> {
 
         if !path.is_dir() {
             println!(
-                "⚠️  '{}' no es un directorio. Intente de nuevo.\n",
+                "⚠️  '{}' is not a folder. Please try again.\n",
                 path.display()
             );
             continue;
@@ -40,7 +40,8 @@ pub fn ask_for_directory() -> Option<PathBuf> {
     }
 }
 
-/// Pregunta sí/no hasta obtener una respuesta reconocible. EOF cuenta como "no".
+/// Asks a yes/no question until it gets a recognizable answer. EOF counts
+/// as "no".
 pub fn confirm(prompt: &str) -> bool {
     loop {
         let Some(input) = read_line(prompt) else {
@@ -48,18 +49,18 @@ pub fn confirm(prompt: &str) -> bool {
         };
 
         match input.trim().to_lowercase().as_str() {
-            "s" | "si" | "sí" | "y" | "yes" => return true,
+            "y" | "yes" => return true,
             "n" | "no" | "q" | "quit" | "exit" => return false,
-            _ => println!("   Por favor, responda 's' (sí) o 'n' (no)."),
+            _ => println!("   Please answer 'y' (yes) or 'n' (no)."),
         }
     }
 }
 
-/// Muestra el prompt y lee una línea. `None` en EOF (Ctrl+Z / pipe agotado),
-/// para salir en lugar de reintentar para siempre.
+/// Shows the prompt and reads a line. `None` on EOF (Ctrl+Z / exhausted
+/// pipe), so callers exit instead of retrying forever.
 fn read_line(prompt: &str) -> Option<String> {
     print!("{prompt}");
-    // Un stdout cerrado (pipe roto) no debe hacer entrar en pánico
+    // A closed stdout (broken pipe) must not cause a panic
     let _ = io::stdout().flush();
 
     let mut input = String::new();

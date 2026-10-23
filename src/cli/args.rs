@@ -1,76 +1,54 @@
 use std::path::PathBuf;
 
-use clap::{ArgAction, Parser, ValueEnum};
+use clap::{Parser, ValueEnum};
 use file_organizer_by_date::{DateSource, ExtensionFilter, Granularity, Options};
 
 const EXIT_CODES_HELP: &str = "\
-Códigos de salida:
-  0  Éxito (o nada que organizar)
-  1  Hubo errores al mover, se canceló, o la ruta no es válida
-  2  Argumentos incorrectos";
+Exit codes:
+  0  Success (or nothing to organize)
+  1  Errors while moving, cancelled, or invalid path
+  2  Invalid arguments";
 
-/// Organiza los archivos sueltos de una carpeta en subcarpetas por fecha
-/// de modificación.
+/// Organizes the loose files of a folder into subfolders by date.
 #[derive(Parser, Debug)]
 #[command(
     name = "file-organizer-by-date",
     bin_name = "file-organizer-by-date",
     version,
-    override_usage = "file-organizer-by-date [OPCIONES] [RUTA]",
-    help_template = "{about}\n\nUso: {usage}\n\n{all-args}{after-help}",
-    after_help = EXIT_CODES_HELP,
-    disable_help_flag = true,
-    disable_version_flag = true,
-    next_help_heading = "Opciones"
+    after_help = EXIT_CODES_HELP
 )]
 pub struct Cli {
-    /// Organiza esa carpeta y termina (modo script). Sin ella se inicia el
-    /// modo interactivo
-    #[arg(value_name = "RUTA", help_heading = "Argumentos")]
+    /// Folder to organize, then exit (script mode). Without it, interactive
+    /// mode starts
+    #[arg(value_name = "PATH")]
     pub path: Option<PathBuf>,
 
-    /// No pide confirmación antes de mover (requiere RUTA)
+    /// Don't ask for confirmation before moving (requires PATH)
     #[arg(short, long, requires = "path")]
     pub yes: bool,
 
-    /// Nivel de detalle de las carpetas: year (Y2024), month (Y2024-M01,
-    /// por defecto) o day (Y2024-M01-D15)
-    #[arg(
-        long,
-        value_enum,
-        value_name = "NIVEL",
-        default_value_t = GroupBy::Month,
-        hide_default_value = true,
-        hide_possible_values = true
-    )]
+    /// Folder granularity: Y2024, Y2024-M01 or Y2024-M01-D15
+    #[arg(long, value_enum, value_name = "LEVEL", default_value_t = GroupBy::Month)]
     pub group_by: GroupBy,
 
-    /// Atajo de --group-by day (carpetas Y2024-M01-D15)
+    /// Shortcut for --group-by day
     #[arg(long, conflicts_with = "group_by")]
     pub by_day: bool,
 
-    /// Fecha que decide la carpeta: modified (por defecto) o created
-    #[arg(
-        long,
-        value_enum,
-        value_name = "FECHA",
-        default_value_t = DateArg::Modified,
-        hide_default_value = true,
-        hide_possible_values = true
-    )]
+    /// Which file date decides the folder
+    #[arg(long, value_enum, value_name = "DATE", default_value_t = DateArg::Modified)]
     pub date: DateArg,
 
-    /// Solo mueve archivos con estas extensiones, separadas por comas
-    /// (p. ej. jpg,png)
+    /// Only move files with these extensions, comma-separated (e.g. jpg,png)
     #[arg(short, long, value_name = "EXTS", value_delimiter = ',')]
     pub extensions: Vec<String>,
 
-    /// Incluye los archivos de las subcarpetas (salta las carpetas Y####…
-    /// ya organizadas) y los mueve a las carpetas por fecha de RUTA
+    /// Also collect files from subfolders (skipping already-organized Y####…
+    /// folders) and move them into the date folders of PATH
     #[arg(short, long)]
     pub recursive: bool,
 
-    /// Deshace la última ejecución sobre RUTA (requiere RUTA)
+    /// Undo the last run on PATH (requires PATH)
     #[arg(
         long,
         requires = "path",
@@ -78,21 +56,13 @@ pub struct Cli {
     )]
     pub undo: bool,
 
-    /// Añade a ese archivo un registro con marca de tiempo de lo ocurrido
-    #[arg(long, value_name = "ARCHIVO")]
+    /// Append a timestamped record of every action to FILE
+    #[arg(long, value_name = "FILE")]
     pub log: Option<PathBuf>,
-
-    /// Muestra esta ayuda
-    #[arg(short, long, action = ArgAction::Help)]
-    help: Option<bool>,
-
-    /// Muestra la versión
-    #[arg(short = 'V', long, action = ArgAction::Version)]
-    version: Option<bool>,
 }
 
-/// Reflejo de `Granularity` para la línea de comandos: el núcleo no depende
-/// de clap.
+/// Mirror of `Granularity` for the command line: the core doesn't depend on
+/// clap.
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum GroupBy {
     Year,
@@ -100,7 +70,7 @@ pub enum GroupBy {
     Day,
 }
 
-/// Reflejo de `DateSource`.
+/// Mirror of `DateSource`.
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DateArg {
     Modified,
@@ -183,7 +153,7 @@ mod tests {
     fn yes_requires_a_path() {
         let err = parse(&["--yes"]).unwrap_err();
         assert_eq!(err.kind(), ErrorKind::MissingRequiredArgument);
-        assert!(parse(&["C:\\x", "-y"]).unwrap().yes);
+        assert!(parse(&["folder", "-y"]).unwrap().yes);
     }
 
     #[test]
@@ -194,13 +164,13 @@ mod tests {
 
     #[test]
     fn undo_requires_path_and_rejects_scan_options() {
-        assert!(parse(&["carpeta", "--undo", "-y"]).unwrap().undo);
+        assert!(parse(&["folder", "--undo", "-y"]).unwrap().undo);
         assert_eq!(
             parse(&["--undo"]).unwrap_err().kind(),
             ErrorKind::MissingRequiredArgument
         );
         assert_eq!(
-            parse(&["carpeta", "--undo", "-r"]).unwrap_err().kind(),
+            parse(&["folder", "--undo", "-r"]).unwrap_err().kind(),
             ErrorKind::ArgumentConflict
         );
     }

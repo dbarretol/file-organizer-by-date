@@ -1,4 +1,4 @@
-//! Frontend de consola sobre el núcleo `file_organizer_by_date`.
+//! Console frontend on top of the `file_organizer_by_date` core.
 
 mod args;
 mod log;
@@ -17,7 +17,7 @@ use file_organizer_by_date::{
 use args::Cli;
 use log::EventLog;
 
-// Códigos de salida documentados en `--help` y en el README.
+// Exit codes, documented in `--help` and in the README.
 const EXIT_OK: u8 = 0;
 const EXIT_FAILURE: u8 = 1;
 const EXIT_USAGE: u8 = 2;
@@ -44,7 +44,7 @@ pub fn run() -> ExitCode {
                 render::invalid_dir(path);
                 return ExitCode::from(EXIT_FAILURE);
             }
-            // 0 solo si no hubo errores ni cancelación
+            // 0 only if there were no errors and no cancellation
             let ok = if cli.undo {
                 undo_directory(path, cli.yes, &mut log)
             } else {
@@ -59,14 +59,14 @@ pub fn run() -> ExitCode {
     }
 }
 
-/// clap entrega --help y --version como "errores" que van a stdout; el
-/// resto son errores de uso.
+/// clap reports --help and --version as "errors" that go to stdout; the
+/// rest are usage errors.
 fn report_parse_error(error: &clap::Error) -> ExitCode {
     let _ = error.print();
     if !error.use_stderr() {
         return ExitCode::from(EXIT_OK);
     }
-    // Una segunda ruta suele ser una ruta con espacios sin comillas
+    // A second path is usually a path with spaces and no quotes
     let extra_positional = error.kind() == ErrorKind::UnknownArgument
         && error
             .get(ContextKind::InvalidArg)
@@ -82,7 +82,7 @@ fn interactive_loop(options: &Options, log: &mut EventLog) {
         organize_directory(&target_dir, options, false, log);
 
         render::separator();
-        if !prompt::confirm("¿Desea organizar otra carpeta? (s/n, o presione 'q' para salir): ") {
+        if !prompt::confirm("Organize another folder? (y/n, or 'q' to quit): ") {
             break;
         }
         println!();
@@ -90,22 +90,23 @@ fn interactive_loop(options: &Options, log: &mut EventLog) {
     render::goodbye();
 }
 
-/// Flujo completo sobre una carpeta: escanear, previsualizar, confirmar, mover.
-/// Con `auto_confirm` no se pregunta antes de mover (modo script).
-/// Devuelve true si terminó sin errores (incluida una carpeta sin nada que
-/// organizar); false si el escaneo falló, hubo errores o se canceló.
+/// Full flow on one folder: scan, preview, confirm, move.
+/// With `auto_confirm` it doesn't ask before moving (script mode).
+/// Returns true if it finished without errors (including a folder with
+/// nothing to organize); false if the scan failed, there were errors, or the
+/// user cancelled.
 fn organize_directory(
     target_dir: &Path,
     options: &Options,
     auto_confirm: bool,
     log: &mut EventLog,
 ) -> bool {
-    log.line(&format!("=== Organizar '{}' ===", target_dir.display()));
+    log.line(&format!("=== Organize '{}' ===", target_dir.display()));
     let plan = match scan(target_dir, options) {
         Ok(plan) => plan,
         Err(error) => {
             render::scan_error(&error);
-            log.line(&format!("Error al escanear: {error}"));
+            log.line(&format!("Error while scanning: {error}"));
             return false;
         }
     };
@@ -117,15 +118,15 @@ fn organize_directory(
 
     if plan.is_empty() {
         render::nothing_to_do();
-        log.line("Nada que organizar");
+        log.line("Nothing to organize");
         return true;
     }
 
     render::preview(&plan);
 
-    if !auto_confirm && !prompt::confirm("¿Está seguro de que desea continuar? (s/n): ") {
+    if !auto_confirm && !prompt::confirm("Do you want to continue? (y/n): ") {
         render::cancelled();
-        log.line("Cancelado por el usuario");
+        log.line("Cancelled by the user");
         return false;
     }
 
@@ -147,37 +148,37 @@ fn organize_directory(
     summary.is_success()
 }
 
-/// Deshace la última ejecución registrada en `target_dir`.
-/// Devuelve true si no hubo errores (o no había nada que deshacer).
+/// Undoes the last run recorded in `target_dir`.
+/// Returns true if there were no errors (or nothing to undo).
 fn undo_directory(target_dir: &Path, auto_confirm: bool, log: &mut EventLog) -> bool {
-    log.line(&format!("=== Deshacer '{}' ===", target_dir.display()));
+    log.line(&format!("=== Undo '{}' ===", target_dir.display()));
     let journal = match Journal::load(target_dir) {
         Ok(Some(journal)) => journal,
         Ok(None) => {
             render::nothing_to_undo();
-            log.line("Nada que deshacer");
+            log.line("Nothing to undo");
             return true;
         }
         Err(error) => {
             render::journal_error(&error);
-            log.line(&format!("Error leyendo el journal: {error}"));
+            log.line(&format!("Error reading the journal: {error}"));
             return false;
         }
     };
 
     render::undo_preview(&journal);
 
-    if !auto_confirm && !prompt::confirm("¿Desea deshacer estos movimientos? (s/n): ") {
+    if !auto_confirm && !prompt::confirm("Undo these moves? (y/n): ") {
         render::cancelled();
-        log.line("Cancelado por el usuario");
+        log.line("Cancelled by the user");
         return false;
     }
 
     let result = undo(target_dir, &journal, &mut |event| show_event(&event, log));
     finish(&result.summary, log);
 
-    // Lo pendiente queda guardado para reintentar; si no queda nada, el
-    // journal se borra
+    // Whatever is pending is kept for a retry; if nothing is left, the
+    // journal is deleted
     if let Err(error) = result.pending.persist(target_dir) {
         render::journal_error(&error);
         return false;
@@ -194,7 +195,7 @@ fn show_event(event: &Event, log: &mut EventLog) {
 fn finish(summary: &Summary, log: &mut EventLog) {
     render::summary(summary);
     log.line(&format!(
-        "Resultado: {} movido(s), {} omitido(s), {} error(es)",
+        "Result: {} moved, {} skipped, {} error(s)",
         summary.moved, summary.skipped, summary.errors
     ));
 }

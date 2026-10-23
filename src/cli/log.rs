@@ -4,9 +4,8 @@ use std::path::Path;
 
 use chrono::Local;
 
-/// Registro opcional (`--log`) con las mismas líneas que la consola, cada
-/// una con marca de tiempo. Se abre en modo append: varias ejecuciones
-/// pueden compartir archivo.
+/// Optional record (`--log`) with the same lines as the console, each one
+/// timestamped. Opened in append mode, so several runs can share a file.
 pub struct EventLog(Option<BufWriter<File>>);
 
 impl EventLog {
@@ -18,8 +17,8 @@ impl EventLog {
         Ok(EventLog(Some(BufWriter::new(file))))
     }
 
-    /// Escribe una línea. El log es auxiliar: un fallo de escritura no debe
-    /// interrumpir un movimiento de archivos a medias, así que se ignora.
+    /// Writes one line. The log is secondary: a write failure must not
+    /// interrupt a half-done batch of moves, so it's ignored.
     pub fn line(&mut self, text: &str) {
         if let Some(out) = &mut self.0 {
             let now = Local::now().format("%Y-%m-%d %H:%M:%S");
