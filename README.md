@@ -174,6 +174,7 @@ Script mode returns a meaningful exit code so automation can detect failures:
    Archivos movidos:  3
    Omitidos:          0
    Errores:           0
+↩️  Puede deshacerlo con: file-organizer-by-date "C:\Users\me\Downloads" --undo
 
 ─────────────────────────────────────────────
 ¿Desea organizar otra carpeta? (s/n, o presione 'q' para salir): q
@@ -202,7 +203,8 @@ file-organizer-by-date/
 ├── Cargo.toml          # Dependencies and project metadata
 ├── README.md           # This file
 ├── docs/
-│   └── REFACTOR_PLAN.md
+│   ├── REFACTOR_PLAN.md   # Phased refactor plan and status
+│   └── GUI_DESIGN.md      # Design of the future desktop GUI
 └── src/
     ├── lib.rs          # Core library API (no printing, no stdin)
     ├── plan.rs         # scan(): directory → Plan of moves + warnings
@@ -290,7 +292,10 @@ This project is licensed under the [MIT License](LICENSE).
 - [x] ~~Add `--extensions` flag to filter by file type~~
 - [x] ~~Add recursive mode with `--recursive` flag~~
 - [x] ~~Add logging to a file~~
-- [ ] Publish to [crates.io](https://crates.io)
+- [ ] Desktop GUI — designed in [`docs/GUI_DESIGN.md`](docs/GUI_DESIGN.md),
+  to be built on its own branch
+- [ ] Group by EXIF capture date for photos
+- [ ] Publish to [crates.io](https://crates.io) (needs a public repository URL)
 
 ---
 

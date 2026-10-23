@@ -205,7 +205,7 @@ Cada una tocó un único punto del núcleo (`scan` y `Options`) más su flag en
     no la fecha de creación. Es irrelevante dentro de una misma carpeta base.
 - [ ] **EXIF** (fecha de captura de fotos): sería un `DateSource::Exif` más,
       con la dependencia `kamadak-exif`. Queda pendiente hasta que haga falta.
-- [ ] **Log a archivo**: pasa a la fase 6, porque comparte formato y
+- [x] **Log a archivo**: se hizo en la fase 6, porque comparte formato y
       mecanismo con el journal.
 
 ## Fase 6: Journal de movimientos, `--undo` y log a archivo
@@ -249,27 +249,25 @@ Núcleo en `src/journal.rs`; la CLI solo conecta los flags.
       una pasada sin cambios, rechazo de `../`, carpeta sin journal y el
       parseo de `--undo`.
 
-## Fase 7: Workspace + GUI
+## Fase 7: Workspace + GUI (trabajo futuro)
 
-- [ ] Pasar a un workspace:
-  ```text
-  crates/
-  ├── organizer-core/   # src/{lib,plan,executor,event,fs_ops,grouping}.rs
-  ├── organizer-cli/    # src/{main.rs, cli/}
-  └── organizer-gui/
-  ```
-  Así las dependencias de la GUI no inflan el binario de la CLI.
-- [ ] Añadir al núcleo lo que una GUI necesita y la CLI no:
-  - `Event::Progress { done, total }`.
-  - Cancelación cooperativa: `cancel: &AtomicBool`, comprobada entre archivos.
-  - Ejecutar sobre un subconjunto del plan (el usuario desmarca filas):
-    `Plan::retain(...)` o `execute` sobre `&[PlannedMove]`.
-- [ ] GUI con **`eframe`/`egui`** (recomendado: Rust puro, un único binario,
-      poco código). La alternativa es Tauri si se quiere una UI web.
-  - Selector de carpeta, opciones (granularidad, filtros), tabla del `Plan`
-    con casillas, botón Ejecutar, barra de progreso, log de eventos y botón
-    Deshacer.
-  - `execute` en un hilo de trabajo que envía los `Event` por `mpsc` a la UI.
+**Decisión:** la GUI queda como trabajo futuro, en una rama propia
+(`feature/gui`). Esta fase no se implementa en `refactor/core-lib`.
+
+El diseño completo está en **[`GUI_DESIGN.md`](GUI_DESIGN.md)**: objetivos,
+principios de usabilidad, arquitectura (workspace, hilos, máquina de estados),
+pantallas, accesibilidad, empaquetado, pruebas e hitos G0 a G7.
+
+Respecto a lo que este plan preveía, el análisis del diseño simplificó los
+cambios del núcleo:
+
+- **Progreso:** no necesita `Event::Progress`. Cada movimiento produce
+  exactamente un evento terminal, así que la GUI cuenta eventos.
+- **Ejecutar un subconjunto:** no necesita API nueva. `Plan::moves` es
+  público y basta con `#[derive(Clone)]` en `PlannedMove`.
+- **Sí hace falta:** cancelación cooperativa (`execute_cancellable` /
+  `undo_cancellable`), `date`/`size` en `PlannedMove` y `Display` para
+  `Failure`/`ScanWarning`.
 
 ---
 
@@ -277,10 +275,10 @@ Núcleo en `src/journal.rs`; la CLI solo conecta los flags.
 
 | Fase | Estado |
 |------|--------|
-| 1. Higiene | ✅ (salvo `repository`, que espera a que exista un remoto) |
+| 1. Higiene | ✅ (salvo `repository`, que espera a que exista un remoto) · MSRV 1.82 |
 | 2. lib/bin + eventos | ✅ |
 | 3. Claridad + bugs | ✅ |
 | 4. clap + `--by-day` | ✅ |
 | 5. Features sobre `Options` | ✅ (EXIF pendiente; log → fase 6) |
 | 6. Journal + `--undo` + log | ✅ |
-| 7. Workspace + GUI | ⏳ |
+| 7. Workspace + GUI | 📄 Diseñada en `GUI_DESIGN.md`; se implementará en `feature/gui` |
