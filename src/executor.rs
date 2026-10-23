@@ -6,7 +6,7 @@ use crate::event::{Event, Failure};
 use crate::fs_ops::{move_file, resolve_conflict, MoveError};
 use crate::plan::{Plan, PlannedMove};
 
-/// Reintentos ante un destino que otro proceso ocupa tras resolver el nombre.
+/// Retries when another process takes the destination after the name was resolved.
 const MAX_MOVE_ATTEMPTS: u32 = 5;
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -17,15 +17,15 @@ pub struct Summary {
 }
 
 impl Summary {
-    /// Sin errores. Los omitidos (archivos que desaparecieron) no cuentan
-    /// como fallo.
+    /// No errors. Skipped files (ones that disappeared) don't count as
+    /// failures.
     pub fn is_success(&self) -> bool {
         self.errors == 0
     }
 }
 
-/// Ejecuta el plan, emitiendo un `Event` por cada paso relevante.
-/// Nunca sobrescribe un archivo existente.
+/// Carries out the plan, emitting an `Event` for every relevant step.
+/// Never overwrites an existing file.
 pub fn execute(plan: &Plan, on_event: &mut dyn FnMut(Event)) -> Summary {
     let mut summary = Summary::default();
 
@@ -57,7 +57,7 @@ pub fn execute(plan: &Plan, on_event: &mut dyn FnMut(Event)) -> Summary {
     summary
 }
 
-/// Mueve un archivo a su carpeta destino. `Ok(None)` si el origen ya no existe.
+/// Moves one file into its destination folder. `Ok(None)` if the source is gone.
 fn move_one(
     base: &Path,
     planned: &PlannedMove,
@@ -82,8 +82,8 @@ fn ensure_dest_dir(
     if dest_dir.is_dir() {
         return Ok(dest_dir);
     }
-    // Puede existir como archivo: reportar en vez de intentar mover dentro
-    // de algo que no es una carpeta.
+    // It may exist as a file: report it instead of trying to move into
+    // something that isn't a folder.
     if dest_dir.exists() {
         return Err(Failure::DestNotADirectory { dest_dir });
     }
@@ -96,9 +96,9 @@ fn ensure_dest_dir(
     Ok(dest_dir)
 }
 
-/// La comprobación con exists() es solo orientativa: move_file nunca
-/// sobrescribe, así que si otro proceso crea el destino justo después de
-/// comprobar (TOCTOU), se resuelve otro nombre y se reintenta.
+/// The exists() check is only a hint: move_file never overwrites, so if
+/// another process creates the destination right after the check
+/// (TOCTOU), another name is resolved and the move is retried.
 pub(crate) fn move_with_retries(
     source: &Path,
     dest_dir: &Path,
@@ -155,14 +155,14 @@ mod tests {
     fn execute_moves_files_and_renames_on_conflict() {
         let dir = tempfile::tempdir().unwrap();
         let base = dir.path();
-        fs::write(base.join("a.txt"), "nuevo").unwrap();
+        fs::write(base.join("a.txt"), "new").unwrap();
         fs::write(base.join("b.txt"), "").unwrap();
 
         let plan = scan(base, &Options::default()).unwrap();
         let folder = plan.moves[0].folder_name.clone();
-        // "a.txt" ya existe en el destino: debe renombrarse, no sobrescribirse
+        // "a.txt" already exists at the destination: it must be renamed, not overwritten
         fs::create_dir(base.join(&folder)).unwrap();
-        fs::write(base.join(&folder).join("a.txt"), "previo").unwrap();
+        fs::write(base.join(&folder).join("a.txt"), "previous").unwrap();
 
         let mut events = Vec::new();
         let summary = execute(&plan, &mut |e| events.push(e));
@@ -176,13 +176,13 @@ mod tests {
             }
         );
         let dest = base.join(&folder);
-        assert_eq!(fs::read_to_string(dest.join("a.txt")).unwrap(), "previo");
-        assert_eq!(fs::read_to_string(dest.join("a_1.txt")).unwrap(), "nuevo");
+        assert_eq!(fs::read_to_string(dest.join("a.txt")).unwrap(), "previous");
+        assert_eq!(fs::read_to_string(dest.join("a_1.txt")).unwrap(), "new");
         assert!(dest.join("b.txt").exists());
         assert!(events
             .iter()
             .any(|e| matches!(e, Event::Conflict { late: false, .. })));
-        // La carpeta ya existía: no se anuncia como creada
+        // The folder already existed: it isn't reported as created
         assert!(!events
             .iter()
             .any(|e| matches!(e, Event::FolderCreated { .. })));

@@ -1,33 +1,33 @@
-//! Operaciones de disco delicadas: mover sin sobrescribir nunca, resistir
-//! condiciones de carrera (TOCTOU) y conservar el mtime en el fallback.
+//! Delicate disk operations: move without ever overwriting, withstand
+//! race conditions (TOCTOU) and keep the mtime in the copy fallback.
 
 use std::ffi::OsStr;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-/// Máximo sufijo numérico (`_1`, `_2`…) que se prueba al resolver un conflicto.
+/// Highest numeric suffix (`_1`, `_2`…) tried when resolving a conflict.
 const MAX_CONFLICT_SUFFIX: u32 = 10_000;
 
 #[derive(Debug)]
 pub(crate) enum MoveError {
-    /// El destino ya existe: move_file nunca sobrescribe. El llamador debe
-    /// resolver otro nombre y reintentar.
+    /// The destination already exists: move_file never overwrites. The
+    /// caller must resolve another name and retry.
     DestinationExists,
-    /// La copia al destino se completó, pero no se pudo borrar el original:
-    /// el archivo queda duplicado (origen y destino).
+    /// The copy to the destination finished, but the original couldn't be
+    /// deleted: the file is now duplicated (source and destination).
     CopiedButOriginalRemains(io::Error),
-    /// No se pudo mover: fallaron tanto rename como copy.
+    /// Couldn't move: both rename and copy failed.
     Failed { rename: io::Error, copy: io::Error },
 }
 
 pub(crate) fn move_file(source: &Path, dest: &Path) -> Result<(), MoveError> {
-    // fs::rename sobrescribe el destino en silencio en TODAS las plataformas
-    // (en Windows usa MoveFileExW con MOVEFILE_REPLACE_EXISTING), así que
-    // primero se reclama el nombre de forma atómica con create_new; rename
-    // después solo sustituye ese placeholder, que ya es nuestro. Si el
-    // placeholder falla por otra razón (p. ej. permisos), rename/copy
-    // fallarán igual y reportarán el error real.
+    // fs::rename silently overwrites the destination on ALL platforms (on
+    // Windows it uses MoveFileExW with MOVEFILE_REPLACE_EXISTING), so the
+    // name is first claimed atomically with create_new; rename then only
+    // replaces that placeholder, which is already ours. If the placeholder
+    // fails for another reason (e.g. permissions), rename/copy will fail
+    // too and report the real error.
     match fs::OpenOptions::new()
         .write(true)
         .create_new(true)
@@ -45,19 +45,19 @@ pub(crate) fn move_file(source: &Path, dest: &Path) -> Result<(), MoveError> {
         Err(e) => e,
     };
 
-    // El placeholder sigue en dest (rename no ocurrió) y es nuestro:
-    // copy_then_remove lo rellena o lo retira si la copia falla.
-    // Si este remove falla (p. ej. un antivirus reteniendo el handle),
-    // copy_then_remove verá AlreadyExists y el reintento usará otro nombre,
-    // dejando atrás este placeholder vacío de 0 bytes. Riesgo asumido: es
-    // inofensivo y la alternativa (abortar el movimiento) sería peor.
+    // The placeholder is still at dest (rename didn't happen) and it's ours:
+    // copy_then_remove fills it in, or removes it if the copy fails.
+    // If this remove fails (e.g. an antivirus holding the handle),
+    // copy_then_remove will see AlreadyExists and the retry will use another
+    // name, leaving this empty 0-byte placeholder behind. Accepted risk: it's
+    // harmless, and the alternative (aborting the move) would be worse.
     let _ = fs::remove_file(dest);
     copy_then_remove(source, dest, rename_err)
 }
 
-/// Fallback cuando rename no es posible (p. ej. destino en otro volumen).
-/// Abre el destino con create_new para no sobrescribir jamás un archivo
-/// creado por otro proceso entre la comprobación de conflictos y este punto.
+/// Fallback when rename isn't possible (e.g. destination on another volume).
+/// Opens the destination with create_new so it never overwrites a file
+/// created by another process between the conflict check and this point.
 fn copy_then_remove(source: &Path, dest: &Path, rename_err: io::Error) -> Result<(), MoveError> {
     let mut dest_file = match fs::OpenOptions::new()
         .write(true)
@@ -80,9 +80,9 @@ fn copy_then_remove(source: &Path, dest: &Path, rename_err: io::Error) -> Result
         let mut src = fs::File::open(source)?;
         let metadata = src.metadata()?;
         io::copy(&mut src, &mut dest_file)?;
-        // Preservar lo que fs::rename habría mantenido: sin esto, el archivo
-        // copiado quedaría con mtime = ahora, corrompiendo justo el dato por
-        // el que esta herramienta organiza.
+        // Preserve what fs::rename would have kept: without this the copied
+        // file would get mtime = now, corrupting the very data this tool
+        // organizes by.
         dest_file.set_modified(metadata.modified()?)?;
         dest_file.set_permissions(metadata.permissions())?;
         Ok::<(), io::Error>(())
@@ -92,7 +92,7 @@ fn copy_then_remove(source: &Path, dest: &Path, rename_err: io::Error) -> Result
     match copy_result {
         Ok(_) => fs::remove_file(source).map_err(MoveError::CopiedButOriginalRemains),
         Err(copy_err) => {
-            // No dejar un destino a medio copiar
+            // Don't leave a half-copied destination behind
             let _ = fs::remove_file(dest);
             Err(MoveError::Failed {
                 rename: rename_err,
@@ -102,9 +102,9 @@ fn copy_then_remove(source: &Path, dest: &Path, rename_err: io::Error) -> Result
     }
 }
 
-/// Primer nombre libre `<stem>_<n><.ext>` dentro de `dest_dir`.
-/// Trabaja con `OsStr` de principio a fin: un nombre que no es UTF-8 válido
-/// conserva sus bytes originales en lugar de convertirse en `�`.
+/// First free name `<stem>_<n><.ext>` inside `dest_dir`.
+/// Works with `OsStr` end to end: a name that isn't valid UTF-8 keeps its
+/// original bytes instead of turning into `�`.
 pub(crate) fn resolve_conflict(dest_dir: &Path, file_name: &OsStr) -> io::Result<PathBuf> {
     let path = Path::new(file_name);
     let stem = path.file_stem().unwrap_or_default();
@@ -143,7 +143,7 @@ mod tests {
         let resolved = resolve_conflict(dir, OsStr::new("a.txt")).unwrap();
         assert_eq!(resolved.file_name().unwrap(), "a_2.txt");
 
-        // Archivo sin extensión
+        // File without an extension
         fs::write(dir.join("README"), "").unwrap();
         let resolved = resolve_conflict(dir, OsStr::new("README")).unwrap();
         assert_eq!(resolved.file_name().unwrap(), "README_1");
@@ -156,10 +156,10 @@ mod tests {
         use std::os::unix::ffi::{OsStrExt, OsStringExt};
 
         let dir = tempfile::tempdir().unwrap();
-        let name = OsStr::from_bytes(b"\xffdatos.txt");
+        let name = OsStr::from_bytes(b"\xffdata.txt");
 
         let resolved = resolve_conflict(dir.path(), name).unwrap();
-        let expected = OsString::from_vec(b"\xffdatos_1.txt".to_vec());
+        let expected = OsString::from_vec(b"\xffdata_1.txt".to_vec());
         assert_eq!(resolved.file_name().unwrap(), expected);
     }
 
@@ -170,15 +170,15 @@ mod tests {
         use std::os::windows::ffi::OsStringExt;
 
         let dir = tempfile::tempdir().unwrap();
-        // Surrogate aislado: válido en NTFS, no representable en UTF-8
+        // Lone surrogate: valid on NTFS, not representable in UTF-8
         let wide = |s: &str| {
             let mut v = vec![0xD800u16];
             v.extend(s.encode_utf16());
             OsString::from_wide(&v)
         };
 
-        let resolved = resolve_conflict(dir.path(), &wide("datos.txt")).unwrap();
-        assert_eq!(resolved.file_name().unwrap(), wide("datos_1.txt"));
+        let resolved = resolve_conflict(dir.path(), &wide("data.txt")).unwrap();
+        assert_eq!(resolved.file_name().unwrap(), wide("data_1.txt"));
     }
 
     #[test]
@@ -186,11 +186,11 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let source = dir.path().join("a.txt");
         let dest = dir.path().join("b.txt");
-        fs::write(&source, "contenido").unwrap();
+        fs::write(&source, "content").unwrap();
 
         assert!(move_file(&source, &dest).is_ok());
         assert!(!source.exists());
-        assert_eq!(fs::read_to_string(&dest).unwrap(), "contenido");
+        assert_eq!(fs::read_to_string(&dest).unwrap(), "content");
     }
 
     #[test]
@@ -198,17 +198,17 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let source = dir.path().join("a.txt");
         let dest = dir.path().join("b.txt");
-        fs::write(&source, "nuevo").unwrap();
-        fs::write(&dest, "original intacto").unwrap();
+        fs::write(&source, "new").unwrap();
+        fs::write(&dest, "original untouched").unwrap();
 
-        // Simula el TOCTOU: el destino apareció después de la comprobación
-        // de conflictos. move_file debe negarse a sobrescribir.
+        // Simulates the TOCTOU: the destination appeared after the conflict
+        // check. move_file must refuse to overwrite.
         assert!(matches!(
             move_file(&source, &dest),
             Err(MoveError::DestinationExists)
         ));
-        assert_eq!(fs::read_to_string(&dest).unwrap(), "original intacto");
-        assert_eq!(fs::read_to_string(&source).unwrap(), "nuevo");
+        assert_eq!(fs::read_to_string(&dest).unwrap(), "original untouched");
+        assert_eq!(fs::read_to_string(&source).unwrap(), "new");
     }
 
     #[test]
@@ -216,9 +216,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let source = dir.path().join("a.txt");
         let dest = dir.path().join("b.txt");
-        fs::write(&source, "contenido").unwrap();
+        fs::write(&source, "content").unwrap();
 
-        // mtime antiguo bien distinto de "ahora" (2001-09-09)
+        // Old mtime, clearly different from "now" (2001-09-09)
         let old_mtime =
             std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_000_000_000);
         fs::File::options()
@@ -228,14 +228,14 @@ mod tests {
             .set_modified(old_mtime)
             .unwrap();
 
-        // En Windows esto funciona porque set_modified explícito suprime la
-        // actualización implícita del last-write al cerrar el handle; si
-        // copy_then_remove pasara a fijar el mtime por ruta tras cerrar,
-        // este test detectaría la regresión.
-        let rename_err = io::Error::other("simulado");
+        // On Windows this works because an explicit set_modified suppresses the
+        // implicit last-write update when the handle is closed; if
+        // copy_then_remove ever set the mtime by path after closing, this test
+        // would catch the regression.
+        let rename_err = io::Error::other("simulated");
         assert!(copy_then_remove(&source, &dest, rename_err).is_ok());
         assert!(!source.exists());
-        assert_eq!(fs::read_to_string(&dest).unwrap(), "contenido");
+        assert_eq!(fs::read_to_string(&dest).unwrap(), "content");
         assert_eq!(fs::metadata(&dest).unwrap().modified().unwrap(), old_mtime);
     }
 
@@ -244,14 +244,14 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let source = dir.path().join("a.txt");
         let dest = dir.path().join("b.txt");
-        fs::write(&source, "nuevo").unwrap();
-        fs::write(&dest, "original intacto").unwrap();
+        fs::write(&source, "new").unwrap();
+        fs::write(&dest, "original untouched").unwrap();
 
-        let rename_err = io::Error::other("simulado");
+        let rename_err = io::Error::other("simulated");
         assert!(matches!(
             copy_then_remove(&source, &dest, rename_err),
             Err(MoveError::DestinationExists)
         ));
-        assert_eq!(fs::read_to_string(&dest).unwrap(), "original intacto");
+        assert_eq!(fs::read_to_string(&dest).unwrap(), "original untouched");
     }
 }

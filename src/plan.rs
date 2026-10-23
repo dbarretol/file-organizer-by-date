@@ -7,15 +7,15 @@ use crate::grouping::{folder_for, is_date_folder};
 use crate::journal::JOURNAL_FILE_NAME;
 use crate::options::{DateSource, Options};
 
-/// Resultado de escanear una carpeta: qué se movería y qué se omitió.
-/// No toca el disco más allá de leer; ejecutarlo es tarea de `execute`.
+/// Result of scanning a folder: what would be moved and what was skipped.
+/// It only reads from disk; carrying it out is `execute`'s job.
 #[derive(Debug)]
 pub struct Plan {
     pub base: PathBuf,
-    /// Ordenado por carpeta destino y luego por ruta origen: preview
-    /// agrupado y movimientos en orden predecible.
+    /// Sorted by destination folder, then by source path: grouped preview
+    /// and moves in a predictable order.
     pub moves: Vec<PlannedMove>,
-    /// En el orden en que se encontraron durante el escaneo.
+    /// In the order they were found during the scan.
     pub warnings: Vec<ScanWarning>,
 }
 
@@ -25,21 +25,21 @@ pub struct PlannedMove {
     pub folder_name: String,
 }
 
-/// Entradas que el escaneo omite por un motivo que merece avisarse.
-/// (Carpetas no recorridas, archivos filtrados y el propio ejecutable se
-/// omiten en silencio.)
+/// Entries the scan skips for a reason worth reporting.
+/// (Folders not visited, filtered-out files and the executable itself are
+/// skipped silently.)
 #[derive(Debug)]
 pub enum ScanWarning {
     UnreadableEntry(io::Error),
-    /// Solo en modo recursivo: una subcarpeta que no se pudo listar.
+    /// Recursive mode only: a subfolder that couldn't be listed.
     UnreadableDir {
         path: PathBuf,
         error: io::Error,
     },
-    /// Decisión deliberada: los enlaces simbólicos (y en Windows también las
-    /// junctions) se omiten. is_file() y metadata() siguen el enlace, así que
-    /// se clasificaría por la fecha del destino, moverlo podría romper
-    /// enlaces relativos y recorrerlo podría entrar en un ciclo.
+    /// Deliberate decision: symbolic links (and, on Windows, junctions) are
+    /// skipped. is_file() and metadata() follow the link, so it would be
+    /// grouped by the target's date, moving it could break relative links,
+    /// and descending into it could loop forever.
     Symlink(PathBuf),
     NoDate {
         path: PathBuf,
@@ -54,10 +54,10 @@ impl Plan {
     }
 }
 
-/// Lee los archivos sueltos del directorio indicado; con
-/// `options.recursive`, también los de sus subcarpetas. Un error al listar
-/// `dir` aborta; los errores por archivo o subcarpeta se registran como
-/// avisos.
+/// Reads the loose files of the given folder and, with
+/// `options.recursive`, those of its subfolders too. Failing to list `dir`
+/// aborts; errors on individual files or subfolders are recorded as
+/// warnings.
 pub fn scan(dir: &Path, options: &Options) -> io::Result<Plan> {
     let mut scanner = Scanner {
         options,
@@ -160,9 +160,9 @@ impl Scanner<'_> {
     }
 }
 
-/// Ruta canónica del propio ejecutable, para no moverlo nunca. Se resuelve
-/// una vez por escaneo, y solo se canonicaliza un archivo cuando su nombre
-/// coincide con el del ejecutable.
+/// Canonical path of the executable itself, so it's never moved. Resolved
+/// once per scan, and a file is only canonicalized when its name matches
+/// the executable's.
 struct SelfExe(Option<PathBuf>);
 
 impl SelfExe {
@@ -190,8 +190,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         fs::write(dir.path().join("b.txt"), "").unwrap();
         fs::write(dir.path().join("a.txt"), "").unwrap();
-        fs::create_dir(dir.path().join("subcarpeta")).unwrap();
-        fs::write(dir.path().join("subcarpeta").join("dentro.txt"), "").unwrap();
+        fs::create_dir(dir.path().join("subfolder")).unwrap();
+        fs::write(dir.path().join("subfolder").join("inside.txt"), "").unwrap();
 
         let plan = scan(dir.path(), &Options::default()).unwrap();
 
@@ -228,7 +228,7 @@ mod tests {
     #[test]
     fn scan_filters_by_extension() {
         let dir = tempfile::tempdir().unwrap();
-        for name in ["foto.JPG", "nota.txt", "clip.png"] {
+        for name in ["photo.JPG", "note.txt", "clip.png"] {
             fs::write(dir.path().join(name), "").unwrap();
         }
 
@@ -238,32 +238,32 @@ mod tests {
         };
         let plan = scan(dir.path(), &options).unwrap();
 
-        assert_eq!(names(&plan), ["clip.png", "foto.JPG"]);
+        assert_eq!(names(&plan), ["clip.png", "photo.JPG"]);
     }
 
     #[test]
     fn recursive_scan_descends_but_skips_date_folders() {
         let dir = tempfile::tempdir().unwrap();
         let base = dir.path();
-        fs::create_dir_all(base.join("fotos").join("viaje")).unwrap();
+        fs::create_dir_all(base.join("photos").join("trip")).unwrap();
         fs::create_dir(base.join("Y2020-M05")).unwrap();
-        fs::write(base.join("raiz.txt"), "").unwrap();
-        fs::write(base.join("fotos").join("a.jpg"), "").unwrap();
-        fs::write(base.join("fotos").join("viaje").join("b.jpg"), "").unwrap();
-        fs::write(base.join("Y2020-M05").join("ya_organizado.txt"), "").unwrap();
+        fs::write(base.join("root.txt"), "").unwrap();
+        fs::write(base.join("photos").join("a.jpg"), "").unwrap();
+        fs::write(base.join("photos").join("trip").join("b.jpg"), "").unwrap();
+        fs::write(base.join("Y2020-M05").join("already_organized.txt"), "").unwrap();
 
         let flat = scan(base, &Options::default()).unwrap();
-        assert_eq!(names(&flat), ["raiz.txt"]);
+        assert_eq!(names(&flat), ["root.txt"]);
 
         let options = Options {
             recursive: true,
             ..Options::default()
         };
         let deep = scan(base, &options).unwrap();
-        assert_eq!(names(&deep), ["a.jpg", "b.jpg", "raiz.txt"]);
+        assert_eq!(names(&deep), ["a.jpg", "b.jpg", "root.txt"]);
     }
 
-    /// Nombres de archivo del plan, ordenados alfabéticamente.
+    /// File names in the plan, sorted alphabetically.
     fn names(plan: &Plan) -> Vec<String> {
         let mut names: Vec<String> = plan
             .moves

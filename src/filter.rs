@@ -1,14 +1,14 @@
 use std::path::Path;
 
-/// Conjunto de extensiones permitidas, sin distinguir mayúsculas.
+/// Set of allowed extensions, case-insensitive.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExtensionFilter {
-    /// Normalizadas: minúsculas y sin el punto inicial.
+    /// Normalized: lowercase and without the leading dot.
     extensions: Vec<String>,
 }
 
 impl ExtensionFilter {
-    /// Acepta `jpg`, `.jpg` o `JPG` indistintamente; ignora entradas vacías.
+    /// Accepts `jpg`, `.jpg` or `JPG` alike; ignores empty entries.
     pub fn new<I, S>(extensions: I) -> Self
     where
         I: IntoIterator<Item = S>,
@@ -28,7 +28,7 @@ impl ExtensionFilter {
         &self.extensions
     }
 
-    /// Un archivo sin extensión, o con una que no es UTF-8, nunca coincide.
+    /// A file without an extension, or with a non-UTF-8 one, never matches.
     pub fn matches(&self, path: &Path) -> bool {
         path.extension()
             .and_then(|e| e.to_str())
@@ -49,9 +49,9 @@ mod tests {
     #[test]
     fn matches_case_insensitively_on_last_extension() {
         let filter = ExtensionFilter::new(["jpg", "gz"]);
-        assert!(filter.matches(Path::new("foto.JPG")));
+        assert!(filter.matches(Path::new("photo.JPG")));
         assert!(filter.matches(Path::new("backup.tar.gz")));
-        assert!(!filter.matches(Path::new("notas.txt")));
+        assert!(!filter.matches(Path::new("notes.txt")));
         assert!(!filter.matches(Path::new("README")));
         assert!(!filter.matches(Path::new(".jpg")));
     }

@@ -1,6 +1,6 @@
 use chrono::{DateTime, Local};
 
-/// Nivel de detalle de las carpetas destino.
+/// Level of detail of the destination folders.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum Granularity {
     /// `Y2024`
@@ -12,7 +12,7 @@ pub enum Granularity {
     Day,
 }
 
-/// Nombre de la carpeta destino para una fecha de modificación dada.
+/// Destination folder name for a given date.
 pub fn folder_for(datetime: DateTime<Local>, granularity: Granularity) -> String {
     let pattern = match granularity {
         Granularity::Year => "Y%Y",
@@ -22,9 +22,9 @@ pub fn folder_for(datetime: DateTime<Local>, granularity: Granularity) -> String
     datetime.format(pattern).to_string()
 }
 
-/// ¿Tiene `name` la forma de una carpeta destino de cualquier granularidad
-/// (`Y2024`, `Y2024-M01`, `Y2024-M01-D15`)? El modo recursivo no entra en
-/// ellas: ya están organizadas y así ejecutarlo dos veces no cambia nada.
+/// Does `name` look like a destination folder of any granularity (`Y2024`,
+/// `Y2024-M01`, `Y2024-M01-D15`)? Recursive mode doesn't descend into them:
+/// they're already organized, so running the tool twice changes nothing.
 pub(crate) fn is_date_folder(name: &str) -> bool {
     fn take<'a>(s: &'a str, prefix: &str, digits: usize) -> Option<&'a str> {
         let rest = s.strip_prefix(prefix)?;
@@ -80,7 +80,7 @@ mod tests {
             "Y2024-D15",
             "Y2024-M01-",
             "y2024",
-            "Fotos",
+            "Photos",
             "",
         ] {
             assert!(!is_date_folder(name), "{name}");

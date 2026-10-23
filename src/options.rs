@@ -5,28 +5,27 @@ use std::time::SystemTime;
 use crate::filter::ExtensionFilter;
 use crate::grouping::Granularity;
 
-/// Cómo escanear y agrupar. Punto de extensión para nuevas features: se
-/// añaden aquí como campos con un valor por defecto que conserva el
-/// comportamiento actual.
+/// How to scan and group. Extension point for new features: add them here
+/// as fields whose default keeps the current behavior.
 #[derive(Debug, Clone, Default)]
 pub struct Options {
     pub granularity: Granularity,
     pub date_source: DateSource,
-    /// `None` = todos los archivos.
+    /// `None` = every file.
     pub extensions: Option<ExtensionFilter>,
-    /// Entra en subcarpetas (sin seguir enlaces y saltando las carpetas
-    /// destino `Y####…`). Los archivos encontrados se mueven a las carpetas
-    /// destino de la carpeta base.
+    /// Descend into subfolders (without following links and skipping the
+    /// `Y####…` destination folders). Files found are moved into the
+    /// destination folders of the base folder.
     pub recursive: bool,
 }
 
-/// Qué fecha del archivo decide su carpeta destino.
+/// Which file date decides its destination folder.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum DateSource {
     #[default]
     Modified,
-    /// No disponible en todas las plataformas y sistemas de archivos: si
-    /// falla, el archivo se omite con un aviso.
+    /// Not available on every platform and filesystem: if it fails, the file
+    /// is skipped with a warning.
     Created,
 }
 

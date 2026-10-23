@@ -1,4 +1,4 @@
-//! Registro de la última ejecución en la carpeta base, para poder deshacerla.
+//! Record of the last run inside the base folder, so it can be undone.
 
 use std::fs;
 use std::io;
@@ -10,21 +10,21 @@ use serde::{Deserialize, Serialize};
 use crate::event::{Event, Failure};
 use crate::executor::{move_with_retries, Summary};
 
-/// Nombre del journal dentro de la carpeta base. El escaneo lo ignora.
+/// Journal file name inside the base folder. The scan ignores it.
 pub const JOURNAL_FILE_NAME: &str = ".file-organizer-journal.json";
 
 const JOURNAL_VERSION: u32 = 1;
 
-/// Movimientos de la última ejecución. Las rutas son relativas a la carpeta
-/// base: el journal sigue siendo válido si se mueve o renombra la carpeta.
+/// Moves of the last run. Paths are relative to the base folder, so the
+/// journal stays valid if the folder is moved or renamed.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Journal {
     version: u32,
-    /// RFC 3339, hora local.
+    /// RFC 3339, local time.
     pub created_at: String,
-    /// En el orden en que se hicieron.
+    /// In the order they were made.
     pub moves: Vec<JournalMove>,
-    /// Carpetas creadas por la ejecución, en orden de creación.
+    /// Folders created by the run, in creation order.
     pub created_dirs: Vec<PathBuf>,
 }
 
@@ -47,7 +47,7 @@ impl Journal {
         base.join(JOURNAL_FILE_NAME)
     }
 
-    /// `Ok(None)` si la carpeta no tiene journal.
+    /// `Ok(None)` if the folder has no journal.
     pub fn load(base: &Path) -> io::Result<Option<Journal>> {
         let text = match fs::read_to_string(Self::path(base)) {
             Ok(text) => text,
@@ -59,8 +59,8 @@ impl Journal {
         Ok(Some(journal))
     }
 
-    /// Escribe a un temporal y lo renombra: un corte a mitad de escritura no
-    /// deja un journal corrupto.
+    /// Writes to a temporary file and renames it: an interruption halfway
+    /// through doesn't leave a corrupt journal.
     fn save(&self, base: &Path) -> io::Result<()> {
         let json = serde_json::to_string_pretty(self).map_err(invalid_data)?;
         let tmp = base.join(format!("{JOURNAL_FILE_NAME}.tmp"));
@@ -68,8 +68,8 @@ impl Journal {
         fs::rename(&tmp, Self::path(base))
     }
 
-    /// Tras un undo: guarda lo que quedó pendiente, o borra el journal si ya
-    /// no queda nada por deshacer.
+    /// After an undo: saves what is still pending, or deletes the journal if
+    /// nothing is left to undo.
     pub fn persist(&self, base: &Path) -> io::Result<()> {
         if !self.moves.is_empty() {
             return self.save(base);
@@ -80,12 +80,12 @@ impl Journal {
         }
     }
 
-    /// El journal es un archivo editable dentro de la carpeta: solo se
-    /// aceptan rutas relativas que no salgan de ella (sin `..` ni raíz).
+    /// The journal is an editable file inside the folder: only relative paths
+    /// that stay inside it are accepted (no `..`, no root).
     fn validate(&self) -> io::Result<()> {
         if self.version != JOURNAL_VERSION {
             return Err(invalid_data(format!(
-                "versión de journal no soportada: {}",
+                "unsupported journal version: {}",
                 self.version
             )));
         }
@@ -99,7 +99,7 @@ impl Journal {
                 && path.components().all(|c| matches!(c, Component::Normal(_)));
             if !inside {
                 return Err(invalid_data(format!(
-                    "ruta fuera de la carpeta base en el journal: '{}'",
+                    "path outside the base folder in the journal: '{}'",
                     path.display()
                 )));
             }
@@ -112,7 +112,7 @@ fn invalid_data(error: impl Into<Box<dyn std::error::Error + Send + Sync>>) -> i
     io::Error::new(io::ErrorKind::InvalidData, error)
 }
 
-/// Construye el journal a partir de los eventos de `execute`.
+/// Builds the journal from the events of `execute`.
 pub struct JournalRecorder {
     base: PathBuf,
     journal: Journal,
@@ -141,21 +141,21 @@ impl JournalRecorder {
         }
     }
 
-    /// JSON solo admite rutas UTF-8: un movimiento con otra ruta no se puede
-    /// registrar (ni, por tanto, deshacer).
+    /// JSON only supports UTF-8 paths: a move with any other path can't be
+    /// recorded (and therefore can't be undone).
     fn relative(&self, path: &Path) -> Option<PathBuf> {
         let relative = path.strip_prefix(&self.base).ok()?;
         relative.to_str().map(PathBuf::from)
     }
 
-    /// Movimientos que no quedaron registrados.
+    /// Moves that weren't recorded.
     pub fn unrecorded(&self) -> usize {
         self.unrecorded
     }
 
-    /// Guarda el journal, reemplazando el anterior, solo si se movió algo:
-    /// una ejecución sin cambios no debe borrar lo que se puede deshacer.
-    /// Devuelve si se guardó.
+    /// Saves the journal, replacing the previous one, only if something moved:
+    /// a run with no changes must not erase what can be undone.
+    /// Returns whether it was saved.
     pub fn save(&self) -> io::Result<bool> {
         if self.journal.moves.is_empty() {
             return Ok(false);
@@ -166,14 +166,14 @@ impl JournalRecorder {
 
 pub struct UndoResult {
     pub summary: Summary,
-    /// Lo que no se pudo deshacer; `Journal::persist` lo guarda para
-    /// reintentarlo o borra el journal si está vacío.
+    /// What couldn't be undone; `Journal::persist` saves it for a retry or
+    /// deletes the journal if it's empty.
     pub pending: Journal,
 }
 
-/// Devuelve cada archivo a su ubicación original, en orden inverso, sin
-/// sobrescribir nunca (un nombre ocupado se resuelve con sufijo, como al
-/// organizar). Después elimina las carpetas creadas que hayan quedado vacías.
+/// Puts every file back in its original location, in reverse order, never
+/// overwriting (a taken name gets a suffix, as when organizing). Then
+/// removes the created folders that were left empty.
 pub fn undo(base: &Path, journal: &Journal, on_event: &mut dyn FnMut(Event)) -> UndoResult {
     let mut summary = Summary::default();
     let mut pending = Journal {
@@ -185,7 +185,7 @@ pub fn undo(base: &Path, journal: &Journal, on_event: &mut dyn FnMut(Event)) -> 
     for entry in journal.moves.iter().rev() {
         let current = base.join(&entry.to);
         if !current.exists() {
-            // Ya no está donde lo dejamos: no hay nada que devolver
+            // It's no longer where we left it: there's nothing to put back
             summary.skipped += 1;
             on_event(Event::SourceMissing { path: current });
             continue;
@@ -211,8 +211,8 @@ pub fn undo(base: &Path, journal: &Journal, on_event: &mut dyn FnMut(Event)) -> 
     pending.moves.reverse();
 
     for dir in journal.created_dirs.iter().rev() {
-        // remove_dir solo borra carpetas vacías: lo que el usuario haya
-        // añadido después nunca se toca.
+        // remove_dir only deletes empty folders: anything the user added
+        // afterwards is never touched.
         if fs::remove_dir(base.join(dir)).is_ok() {
             on_event(Event::FolderRemoved {
                 folder_name: dir.display().to_string(),
@@ -234,7 +234,7 @@ fn restore(
     let file_name = original.file_name().ok_or(Failure::NoFileName)?;
     let dest_dir = base.join(original.parent().unwrap_or(Path::new("")));
 
-    // En modo recursivo la subcarpeta de origen puede haberse borrado
+    // In recursive mode the source subfolder may have been deleted
     if !dest_dir.is_dir() {
         if let Err(error) = fs::create_dir_all(&dest_dir) {
             return Err(Failure::CreateDir { dest_dir, error });
@@ -278,7 +278,7 @@ mod tests {
             ..Options::default()
         };
         assert_eq!(organize(base, &options).moved, 2);
-        // Recursivo: la subcarpeta vaciada se borra para probar que se recrea
+        // Recursive: delete the emptied subfolder to check it gets recreated
         fs::remove_dir(base.join("sub")).unwrap();
 
         let journal = Journal::load(base).unwrap().unwrap();
@@ -293,7 +293,7 @@ mod tests {
             fs::read_to_string(base.join("sub").join("b.txt")).unwrap(),
             "b"
         );
-        // Solo quedan los archivos restaurados: ni carpetas Y…, ni journal
+        // Only the restored files are left: no Y… folders, no journal
         let mut left: Vec<_> = fs::read_dir(base)
             .unwrap()
             .map(|e| e.unwrap().file_name())
@@ -310,12 +310,12 @@ mod tests {
         organize(base, &Options::default());
         let journal = Journal::load(base).unwrap().unwrap();
         let folder = base.join(&journal.created_dirs[0]);
-        fs::write(folder.join("del_usuario.txt"), "").unwrap();
+        fs::write(folder.join("users_file.txt"), "").unwrap();
 
         let result = undo(base, &journal, &mut |_| {});
 
         assert!(result.summary.is_success());
-        assert!(folder.join("del_usuario.txt").exists());
+        assert!(folder.join("users_file.txt").exists());
     }
 
     #[test]
@@ -325,7 +325,7 @@ mod tests {
         fs::write(base.join("a.txt"), "").unwrap();
         organize(base, &Options::default());
 
-        // Segunda pasada: nada que mover (y el journal no se escanea)
+        // Second pass: nothing to move (and the journal isn't scanned)
         let second = organize(base, &Options::default());
 
         assert_eq!(second.moved, 0);
@@ -335,7 +335,7 @@ mod tests {
     #[test]
     fn load_rejects_paths_escaping_the_base() {
         let dir = tempfile::tempdir().unwrap();
-        let evil = r#"{"version":1,"created_at":"","moves":[{"from":"../fuera.txt","to":"a.txt"}],"created_dirs":[]}"#;
+        let evil = r#"{"version":1,"created_at":"","moves":[{"from":"../outside.txt","to":"a.txt"}],"created_dirs":[]}"#;
         fs::write(Journal::path(dir.path()), evil).unwrap();
 
         let err = Journal::load(dir.path()).unwrap_err();

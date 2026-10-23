@@ -2,21 +2,21 @@ use std::ffi::OsString;
 use std::io;
 use std::path::PathBuf;
 
-/// Lo que `execute` comunica mientras trabaja. Son valores *owned* para
-/// poder enviarlos por un canal desde un hilo de trabajo (p. ej. a una GUI).
+/// What `execute` and `undo` report while they work. Values are *owned* so
+/// they can be sent through a channel from a worker thread (e.g. to a GUI).
 #[derive(Debug)]
 pub enum Event {
     FolderCreated {
         folder_name: String,
     },
-    /// Solo al deshacer: una carpeta creada por la ejecución quedó vacía y
-    /// se eliminó.
+    /// Undo only: a folder created by the run was left empty and was
+    /// removed.
     FolderRemoved {
         folder_name: String,
     },
-    /// El nombre ya estaba ocupado en el destino y se usará otro.
-    /// `late` indica que el conflicto apareció después de la comprobación
-    /// inicial (otro proceso creó el archivo: TOCTOU) y se reintenta.
+    /// The name was already taken at the destination and another one will
+    /// be used. `late` means the conflict appeared after the initial check
+    /// (another process created the file: TOCTOU) and the move is retried.
     Conflict {
         original: OsString,
         renamed_to: OsString,
@@ -26,8 +26,8 @@ pub enum Event {
         from: PathBuf,
         to: PathBuf,
     },
-    /// Desapareció entre el escaneo y la ejecución: no es un fallo nuestro,
-    /// se cuenta como omitido.
+    /// It disappeared between the scan and the move: not our failure, so it
+    /// counts as skipped.
     SourceMissing {
         path: PathBuf,
     },
@@ -37,11 +37,11 @@ pub enum Event {
     },
 }
 
-/// Por qué no se pudo mover un archivo. Cada una cuenta como error.
+/// Why a file couldn't be moved. Each one counts as an error.
 #[derive(Debug)]
 pub enum Failure {
-    /// La ruta destino existe pero no es una carpeta (p. ej. un archivo
-    /// llamado "Y2026-M07" sin extensión).
+    /// The destination path exists but is not a folder (e.g. a file named
+    /// "Y2026-M07" with no extension).
     DestNotADirectory {
         dest_dir: PathBuf,
     },
@@ -51,17 +51,17 @@ pub enum Failure {
     },
     NoFileName,
     ResolveConflict(io::Error),
-    /// El destino siguió ocupado tras varios reintentos.
+    /// The destination was still taken after several retries.
     DestinationBusy {
         attempts: u32,
     },
-    /// La copia al destino se completó, pero no se pudo borrar el original:
-    /// el archivo queda duplicado (origen y destino).
+    /// The copy to the destination finished, but the original couldn't be
+    /// deleted: the file is now duplicated (source and destination).
     CopiedButOriginalRemains {
         dest: PathBuf,
         error: io::Error,
     },
-    /// Fallaron tanto rename como copy.
+    /// Both rename and copy failed.
     Move {
         rename: io::Error,
         copy: io::Error,

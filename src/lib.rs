@@ -1,8 +1,8 @@
-//! Núcleo de File Organizer by Date: planificar y ejecutar el movimiento de
-//! archivos sueltos a carpetas por fecha de modificación.
+//! Core of File Organizer by Date: plan and carry out moving the loose files
+//! of a folder into subfolders by date, and undo it.
 //!
-//! No imprime ni lee de stdin: devuelve datos ([`Plan`], [`Summary`]) y emite
-//! [`Event`]s, para que cualquier frontend (CLI, GUI) decida cómo mostrarlos.
+//! It never prints or reads stdin: it returns data ([`Plan`], [`Summary`])
+//! and emits [`Event`]s, so any frontend (CLI, GUI) decides how to show them.
 
 mod event;
 mod executor;
