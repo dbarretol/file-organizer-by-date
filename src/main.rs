@@ -50,7 +50,9 @@ fn main() {
         std::process::exit(if ok { 0 } else { 1 });
     }
     if auto_confirm {
-        eprintln!("✘ --yes requiere pasar también una ruta. Uso: file-organizer-by-date RUTA --yes");
+        eprintln!(
+            "✘ --yes requiere pasar también una ruta. Uso: file-organizer-by-date RUTA --yes"
+        );
         std::process::exit(2);
     }
 
@@ -121,10 +123,7 @@ fn organize_directory(target_dir: &Path, auto_confirm: bool) -> bool {
 // ─────────────────────── RECOPILAR ARCHIVOS ─────────────────
 
 /// Lee SOLO los archivos sueltos del directorio indicado (sin recursión).
-fn collect_files(
-    dir: &Path,
-    entries: &mut Vec<FileEntry>,
-) -> std::io::Result<()> {
+fn collect_files(dir: &Path, entries: &mut Vec<FileEntry>) -> std::io::Result<()> {
     for entry in fs::read_dir(dir)? {
         // Errores por archivo: saltar con aviso en lugar de abortar el escaneo
         let entry = match entry {
@@ -329,7 +328,11 @@ fn move_file(source: &Path, dest: &Path) -> Result<(), MoveError> {
     // después solo sustituye ese placeholder, que ya es nuestro. Si el
     // placeholder falla por otra razón (p. ej. permisos), rename/copy
     // fallarán igual y reportarán el error real.
-    match fs::OpenOptions::new().write(true).create_new(true).open(dest) {
+    match fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(dest)
+    {
         Ok(_) => {}
         Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {
             return Err(MoveError::DestinationExists)
@@ -356,7 +359,11 @@ fn move_file(source: &Path, dest: &Path) -> Result<(), MoveError> {
 /// Abre el destino con create_new para no sobrescribir jamás un archivo
 /// creado por otro proceso entre la comprobación de conflictos y este punto.
 fn copy_then_remove(source: &Path, dest: &Path, rename_err: io::Error) -> Result<(), MoveError> {
-    let mut dest_file = match fs::OpenOptions::new().write(true).create_new(true).open(dest) {
+    let mut dest_file = match fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(dest)
+    {
         Ok(file) => file,
         Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {
             return Err(MoveError::DestinationExists)
@@ -427,7 +434,12 @@ fn print_banner() {
 
     let centered = |text: &str, cols: usize| {
         let left = (inner - cols) / 2;
-        format!("{}{}{}", " ".repeat(left), text, " ".repeat(inner - cols - left))
+        format!(
+            "{}{}{}",
+            " ".repeat(left),
+            text,
+            " ".repeat(inner - cols - left)
+        )
     };
 
     println!("╔{}╗", "═".repeat(inner));
@@ -463,12 +475,18 @@ fn ask_for_directory() -> Option<PathBuf> {
         let path = PathBuf::from(cleaned);
 
         if !path.exists() {
-            println!("⚠️  La ruta '{}' no existe. Intente de nuevo.\n", path.display());
+            println!(
+                "⚠️  La ruta '{}' no existe. Intente de nuevo.\n",
+                path.display()
+            );
             continue;
         }
 
         if !path.is_dir() {
-            println!("⚠️  '{}' no es un directorio. Intente de nuevo.\n", path.display());
+            println!(
+                "⚠️  '{}' no es un directorio. Intente de nuevo.\n",
+                path.display()
+            );
             continue;
         }
 
@@ -516,7 +534,11 @@ fn print_preview(entries: &[FileEntry]) {
 
         println!("   📁 {}/  ({} archivo(s))", folder, count);
         for entry in &entries[start..start + count.min(MAX_PER_GROUP)] {
-            let name = entry.source.file_name().unwrap_or_default().to_string_lossy();
+            let name = entry
+                .source
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy();
             println!("      {}", name);
         }
         if count > MAX_PER_GROUP {
@@ -646,8 +668,8 @@ mod tests {
         fs::write(&source, "contenido").unwrap();
 
         // mtime antiguo bien distinto de "ahora" (2001-09-09)
-        let old_mtime = std::time::SystemTime::UNIX_EPOCH
-            + std::time::Duration::from_secs(1_000_000_000);
+        let old_mtime =
+            std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_000_000_000);
         fs::File::options()
             .write(true)
             .open(&source)
