@@ -22,6 +22,30 @@ pub fn folder_for(datetime: DateTime<Local>, granularity: Granularity) -> String
     datetime.format(pattern).to_string()
 }
 
+/// ¿Tiene `name` la forma de una carpeta destino de cualquier granularidad
+/// (`Y2024`, `Y2024-M01`, `Y2024-M01-D15`)? El modo recursivo no entra en
+/// ellas: ya están organizadas y así ejecutarlo dos veces no cambia nada.
+pub(crate) fn is_date_folder(name: &str) -> bool {
+    fn take<'a>(s: &'a str, prefix: &str, digits: usize) -> Option<&'a str> {
+        let rest = s.strip_prefix(prefix)?;
+        let head = rest.get(..digits)?;
+        head.bytes()
+            .all(|b| b.is_ascii_digit())
+            .then(|| &rest[digits..])
+    }
+
+    let Some(mut rest) = take(name, "Y", 4) else {
+        return false;
+    };
+    for (prefix, digits) in [("-M", 2), ("-D", 2)] {
+        match take(rest, prefix, digits) {
+            Some(r) => rest = r,
+            None => break,
+        }
+    }
+    rest.is_empty()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -42,6 +66,25 @@ mod tests {
         assert_eq!(folder_for(dt, Granularity::Year), "Y2024");
         assert_eq!(folder_for(dt, Granularity::Month), "Y2024-M01");
         assert_eq!(folder_for(dt, Granularity::Day), "Y2024-M01-D05");
+    }
+
+    #[test]
+    fn is_date_folder_recognizes_every_granularity_only() {
+        for name in ["Y2024", "Y2024-M01", "Y2024-M01-D15"] {
+            assert!(is_date_folder(name), "{name}");
+        }
+        for name in [
+            "Y202",
+            "Y20245",
+            "Y2024-M1",
+            "Y2024-D15",
+            "Y2024-M01-",
+            "y2024",
+            "Fotos",
+            "",
+        ] {
+            assert!(!is_date_folder(name), "{name}");
+        }
     }
 
     #[test]
