@@ -1,8 +1,12 @@
 name: CI
 
 on:
+  # Other branches are checked through their pull request; also running on
+  # their pushes would duplicate every job.
   push:
+    branches: [main]
   pull_request:
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always

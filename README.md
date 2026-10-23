@@ -163,6 +163,16 @@ Useful when calling the tool from scripts:
 
 ## ⚙️ How it works
 
+```mermaid
+flowchart LR
+    A["📂 Your folder"] --> B["Scan<br/>pick files and their dates"]
+    B --> C{"Preview<br/>Continue?"}
+    C -->|No| N["Nothing changes"]
+    C -->|Yes| D["Move into Y####-M## folders<br/>never overwriting"]
+    D --> J[("Undo record<br/>.file-organizer-journal.json")]
+    J -->|"--undo"| U["Files back in place<br/>emptied date folders removed"]
+```
+
 ### Which files are moved
 
 - **By default, only the files directly inside the folder.** Subfolders and
@@ -234,6 +244,27 @@ The code is split into a **core library**, which never prints or reads input,
 and a **CLI** on top of it. The core returns data (`Plan`, `Summary`) and emits
 `Event`s; the CLI decides how to show them. The planned desktop GUI will reuse
 the same core.
+
+```mermaid
+flowchart TB
+    CLI["CLI<br/>src/cli"]
+    GUI["Desktop GUI<br/>planned"]:::planned
+
+    subgraph Core["Core library: returns data and events, never prints"]
+        direction LR
+        Scan["scan()"] --> Plan["Plan<br/>moves + warnings"] --> Execute["execute()"]
+        Execute -->|"JournalRecorder"| Journal[("Journal")]
+        Journal --> Undo["undo()"]
+        Execute -.-> FsOps["fs_ops<br/>safe moves"]
+        Undo -.-> FsOps
+    end
+
+    CLI -->|"Options"| Core
+    Core -->|"Events + Summary"| CLI
+    GUI -.->|"same API"| Core
+
+    classDef planned stroke-dasharray: 5 5
+```
 
 ```text
 src/
