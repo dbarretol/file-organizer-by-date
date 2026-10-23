@@ -1,0 +1,4 @@
+# When resolving dependencies, prefer versions compatible with `rust-version`
+# (Cargo.toml) so `cargo update` doesn't break the MSRV.
+[resolver]
+incompatible-rust-versions = "fallback"
